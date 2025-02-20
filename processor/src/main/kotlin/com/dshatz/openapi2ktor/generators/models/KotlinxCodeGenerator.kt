@@ -2,15 +2,14 @@ package com.dshatz.openapi2ktor.generators.models
 
 import com.dshatz.openapi2ktor.generators.Type
 import com.dshatz.openapi2ktor.generators.TypeStore
+import com.dshatz.openapi2ktor.utils.makeCodeBlock
 import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonClassDiscriminator
-import kotlinx.serialization.json.JsonContentPolymorphicSerializer
-import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.*
 import javax.lang.model.element.ExecutableElement
 
 class KotlinxCodeGenerator: IModelGenerator {
@@ -34,18 +33,6 @@ class KotlinxCodeGenerator: IModelGenerator {
             if (!interfacesForOneOf.isNullOrEmpty()) {
                 typeSpecBuilder.addSuperinterfaces(interfacesForOneOf.map { it.typeName })
             }
-            /*if (interfacesForOneOf != null) typeSpecBuilder.apply {
-                interfacesForOneOf.forEach { addSuperinterface(it.typeName) }
-                // SerialName for mapping
-                addAnnotation(
-                    AnnotationSpec
-                        .builder(SerialName::class)
-                        .addMember("%S", interfacesForOneOf.first().childrenMapping[type]!!)
-                        .build()
-                )
-                // Remove discriminator prop.
-                propsParams.removeIf { it.first.namremoveIfe == interfacesForOneOf.first().discriminator }
-            }*/
 
             val constructorBuilder = FunSpec.constructorBuilder()
             propsParams.forEach { (prop, param) ->
@@ -96,6 +83,7 @@ class KotlinxCodeGenerator: IModelGenerator {
     private fun Type.SimpleType.defaultValue(): CodeBlock {
         return when (this.typeName) {
             String::class.asTypeName() -> CodeBlock.of("%S", default)
+            JsonPrimitive::class.asTypeName() -> (default as JsonPrimitive).makeCodeBlock()
             else -> CodeBlock.of("%L", default)
         }
     }

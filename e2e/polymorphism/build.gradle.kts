@@ -6,7 +6,7 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
-val input = "${project.rootProject.projectDir}/e2e/src/test/resources/sample.yaml"
+val input = "${project.projectDir}/src/test/resources/sample.yaml"
 
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")

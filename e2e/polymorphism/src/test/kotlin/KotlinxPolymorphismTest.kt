@@ -72,14 +72,16 @@ class KotlinxPolymorphismTest {
         assertEquals("string", response.name)
     }
 
-    class IGetUsersResponse201Serializer: JsonContentPolymorphicSerializer<IGetUsersResponse201>(IGetUsersResponse201::class) {
-        val discriminator = "type"
-        override fun selectDeserializer(element: JsonElement): DeserializationStrategy<IGetUsersResponse201> {
+    /*interface IntegerOrString
+    class IntegerOrStringSerializer: JsonContentPolymorphicSerializer<IntegerOrString>(IntegerOrString::class) {
+
+        override fun selectDeserializer(element: JsonElement): DeserializationStrategy<IntegerOrString> {
+            if (element.jsonPrimitive.)
             return when (element.jsonObject[discriminator]?.jsonPrimitive?.content) {
                 "normal" -> User.serializer()
                 else -> AdminUser.serializer()
             }
         }
 
-    }
+    }*/
 }

@@ -9,6 +9,8 @@ import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
 import com.dshatz.openapi2ktor.generators.Type.Companion.simpleType
 import com.dshatz.openapi2ktor.utils.*
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 
 class OpenApiAnalyzer(
     private val typeStore: TypeStore,
@@ -66,10 +68,12 @@ class OpenApiAnalyzer(
 
     private fun Schema.makeProps(): Map<String, Type> {
         return properties.entries.associate { (name, schema) ->
-            val type = schema.makeType("", schema.isNullable)
+            val type = schema.makeType(name, schema.isNullable)
             name to type
         }
     }
+
+    private val simpleTypes = listOf("string", "integer", "number", "boolean")
 
     private fun Schema.makeType(nameForObject: String, nullable: Boolean = false): Type {
         fun Type.register(): Type = apply {
@@ -95,24 +99,31 @@ class OpenApiAnalyzer(
             "integer" -> Int::class.asClassName().simpleType(nullable, default)
             "object" -> {
                 Type.WithProps.Object(
-                    ClassName(packages.models, nameForObject),
+                    ClassName(packages.models, nameForObject.capitalize()),
                     props = makeProps()
                 ).register()
             }
             null -> {
                 if (hasOneOfSchemas()) {
-                    // One of
-                    Type.OneOf(
-                        typeName = ClassName(packages.models, "I$nameForObject"),
-                        childrenMapping = oneOfSchemas.associate {
-                            val discriminatorValue = discriminator
-                                .mappings.entries
-                                .find { pair -> pair.value == it.getReferenceId() }?.key
+                    // oneOf
+                    if (oneOfSchemas.all { it.type in simpleTypes }) {
+                        JsonPrimitive::class.asClassName().simpleType(nullable, default.makeDefaultPrimitive())
+                    } else if (oneOfSchemas.any { it.type in simpleTypes } || discriminator.propertyName == null) {
+                        // Some of oneOf are primitives so we can't make a truly polymorphic supertype?
+                        JsonElement::class.asClassName().simpleType(nullable, default)
+                    } else {
+                        Type.OneOf(
+                            typeName = ClassName(packages.models, "I$nameForObject"),
+                            childrenMapping = oneOfSchemas.associate {
+                                val discriminatorValue = discriminator
+                                    .mappings.entries
+                                    .find { pair -> pair.value == it.getReferenceId() }?.key
 
-                            it.makeType(nameForObject) to (discriminatorValue ?: it.name)
-                        },
-                        discriminator = discriminator.propertyName
-                    ).register()
+                                it.makeType(nameForObject) to (discriminatorValue ?: it.name)
+                            },
+                            discriminator = discriminator.propertyName
+                        ).register()
+                    }
                 } else if (hasAllOfSchemas()) {
                     val allProps = allOfSchemas.flatMap { it.makeProps().entries }.associate { it.key to it.value }
                     Type.WithProps.Object(ClassName(packages.models, nameForObject), allProps).register()

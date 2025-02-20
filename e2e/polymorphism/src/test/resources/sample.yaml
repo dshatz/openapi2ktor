@@ -97,8 +97,10 @@ paths:
                   type: string
                   default: "user1"
                 age:
-                  type: integer
-                  nullable: true
+                  oneOf:
+                    - type: integer
+                    - type: string
+                  default: "hello"
       responses:
         '200':
           description: "User created successfully"

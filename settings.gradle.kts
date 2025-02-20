@@ -23,5 +23,6 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "openapi2ktor"
-include(":e2e")
+include(":e2e:polymorphism")
+include(":e2e:binance")
 include(":processor")
