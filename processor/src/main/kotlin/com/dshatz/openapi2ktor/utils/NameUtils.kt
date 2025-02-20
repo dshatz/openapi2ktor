@@ -2,6 +2,10 @@ package com.dshatz.openapi2ktor.utils
 
 import com.reprezen.jsonoverlay.Overlay
 import com.reprezen.kaizen.oasparser.model3.Schema
+import com.squareup.kotlinpoet.CodeBlock
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 fun makeResponseModelName(verb: String, path: String, response: String, includeStatus: Boolean): String {
     return makeCamelCase(verb, path.safeName(), "Response", response.takeIf { includeStatus })
@@ -38,4 +42,18 @@ fun Schema.getReferenceId(): String? {
     } else {
         null
     }
+}
+
+fun Any.makeDefaultPrimitive(): JsonPrimitive? {
+    return when (this) {
+        is String -> JsonPrimitive(this)
+        is Number -> JsonPrimitive(this)
+        is Boolean -> JsonPrimitive(this)
+        else -> null
+    }
+}
+
+fun JsonPrimitive.makeCodeBlock(): CodeBlock {
+    val template = if (isString) "%T(%S)" else "%T(%L)"
+    return CodeBlock.of(template, JsonPrimitive::class, contentOrNull)
 }
