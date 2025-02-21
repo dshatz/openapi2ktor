@@ -1,9 +1,11 @@
-import com.example.models.*
-import kotlinx.serialization.DeserializationStrategy
-import kotlinx.serialization.PolymorphicSerializer
+import com.example.models.components.schemas.AdminUser.AdminUser
+import com.example.models.components.schemas.User.User
+import com.example.models.paths.orders.get.responses.GetOrdersResponse
+import com.example.models.paths.orders.get.responses.GetOrdersResponse400
+import com.example.models.paths.users.get.responses.GetUsersResponse200
+import com.example.models.paths.users.get.responses.GetUsersResponse201
+import com.example.models.paths.users.post.responses.PostUsersResponse
 import kotlinx.serialization.json.*
-import kotlinx.serialization.modules.SerializersModule
-import kotlinx.serialization.modules.polymorphic
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -18,17 +20,17 @@ class KotlinxPolymorphismTest {
               {
                 "id": 0,
                 "name": "string",
-                "userType": "User"
+                "user_type": "User"
               },
               {
                 "id": 0,
                 "name": "string",
-                "userType": "AdminUser",
+                "user_type": "AdminUser",
                 "beard": true
               }
             ]
         """.trimIndent()
-        val response = Json.decodeFromString<List<IGetUsersResponse200>>(json)
+        val response = Json.decodeFromString<GetUsersResponse200>(json)
         assertEquals(2, response.size)
         assertIs<User>(response.first())
         assertIs<AdminUser>(response.last())
@@ -41,17 +43,17 @@ class KotlinxPolymorphismTest {
               {
                 "id": 0,
                 "name": "string",
-                "userType": "normal"
+                "user_type": "normal"
               },
               {
                 "id": 0,
                 "name": "string",
-                "userType": "admin",
+                "user_type": "admin",
                 "beard": true
               }
             ]
         """.trimIndent()
-        val response = Json.decodeFromString<List<IGetUsersResponse201>>(json)
+        val response = Json.decodeFromString<GetUsersResponse201>(json)
         assertEquals(2, response.size)
         assertIs<User>(response.first())
         assertIs<AdminUser>(response.last())
@@ -63,7 +65,7 @@ class KotlinxPolymorphismTest {
             {
                 "id": 0,
                 "name": "string",
-                "userType": "AdminUser",
+                "user_type": "AdminUser",
                 "beard": true
               }
         """.trimIndent()
@@ -72,16 +74,28 @@ class KotlinxPolymorphismTest {
         assertEquals("string", response.name)
     }
 
-    /*interface IntegerOrString
-    class IntegerOrStringSerializer: JsonContentPolymorphicSerializer<IntegerOrString>(IntegerOrString::class) {
+    @Test
+    fun `model in a list`() {
+        val json = """
+            [{
+                "id": 0,
+                "amount": "2"
+              }]
+        """.trimIndent()
+        val response = Json.decodeFromString<GetOrdersResponse>(json)
+        assertEquals(0, response.first().id)
+    }
 
-        override fun selectDeserializer(element: JsonElement): DeserializationStrategy<IntegerOrString> {
-            if (element.jsonPrimitive.)
-            return when (element.jsonObject[discriminator]?.jsonPrimitive?.content) {
-                "normal" -> User.serializer()
-                else -> AdminUser.serializer()
+    @Test
+    fun `empty object`() {
+        val json = """
+            {
+                "a": 11,
+                "b": "test"
             }
-        }
+        """.trimIndent()
+        val response = Json.decodeFromString<GetOrdersResponse400>(json)
+        assertEquals(11, response["a"]?.jsonPrimitive?.int)
 
-    }*/
+    }
 }

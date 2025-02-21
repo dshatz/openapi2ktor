@@ -9,7 +9,9 @@ import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
 import com.dshatz.openapi2ktor.generators.Type.Companion.simpleType
 import com.dshatz.openapi2ktor.utils.*
+import com.reprezen.jsonoverlay.Overlay
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 class OpenApiAnalyzer(
@@ -21,16 +23,16 @@ class OpenApiAnalyzer(
     private val clientGenerator = KtorClientGenerator()
 
     fun generate(api: OpenApi3): List<FileSpec> {
-        api.gatherRefModels()
+        api.gatherComponentModels()
         api.gatherPathModels()
         typeStore.printTypes()
         val fileSpecs = modelGenerator.generate(typeStore)
         return fileSpecs
     }
 
-    private fun OpenApi3.gatherRefModels() {
+    private fun OpenApi3.gatherComponentModels() {
         schemas.map { (schemaName, schema) ->
-            schema.makeType(schemaName)
+            schema.makeType(schemaName, components = true)
         }
     }
 
@@ -66,6 +68,7 @@ class OpenApiAnalyzer(
         }
     }
 
+
     private fun Schema.makeProps(): Map<String, Type> {
         return properties.entries.associate { (name, schema) ->
             val type = schema.makeType(name, schema.isNullable)
@@ -75,49 +78,65 @@ class OpenApiAnalyzer(
 
     private val simpleTypes = listOf("string", "integer", "number", "boolean")
 
-    private fun Schema.makeType(nameForObject: String, nullable: Boolean = false): Type {
+    private fun Schema.makeType(nameForObject: String, nullable: Boolean = false, components: Boolean = false, isReference: Boolean = false): Type {
         fun Type.register(): Type = apply {
-            if (isReference()) {
-                typeStore.registerReference(this@makeType.getReferenceId()!!, this)
+            if (isComponentSchema()) {
+                typeStore.registerComponentSchema(this@makeType.getComponentRef()!!, this)
             } else {
                 typeStore.registerType(this@makeType, this)
             }
         }
 
+        fun Schema.isArrayItemAReference(): Boolean {
+            return Overlay.of(this).toJson()?.get("items")?.get("\$ref") != null
+        }
 
-        /*fun Type.registerUnique(): Type = apply {
-            if (!typeStore.getTypes().values.contains(this)) typeStore.registerType(this@makeType, this)
+        // component if createDefinitions and isComponentSchema
+        // reference if isComponentSchema and !createDefinitions
+        // type if
+
+       /* if (!createDefinitions && isComponentSchema()) {
+            // reference
+            val className = makePackageName(getComponentRef()!!, packages.models)
+            return Type.SimpleType(ClassName(className, className.substringAfterLast(".")))
         }*/
 
-        return when (type) {
+        val schemaType = if (isReference) null else type
+
+
+        return when (schemaType) {
             "array" -> {
-                List::class.asTypeName().parameterizedBy(itemsSchema.makeType(nameForObject).typeName).simpleType(nullable)
+                List::class.asTypeName().parameterizedBy(
+                    itemsSchema.makeType(nameForObject + "Item", isReference = isArrayItemAReference()).typeName
+                ).simpleType(nullable).also {
+                    // typealias XXResponse = List<XXResponseItem>
+                    Type.Alias(
+                        typeName = ClassName(modelPackageName(packages), nameForObject),
+                        aliasTarget = it
+                    ).register()
+                }
             }
             "string" -> String::class.asClassName().simpleType(nullable, default)
             "boolean" -> Boolean::class.asClassName().simpleType(nullable, default)
             "number" -> Double::class.asClassName().simpleType(nullable, default)
             "integer" -> Int::class.asClassName().simpleType(nullable, default)
-            "object" -> {
-                Type.WithProps.Object(
-                    ClassName(packages.models, nameForObject.capitalize()),
-                    props = makeProps()
-                ).register()
-            }
+            "object" -> makeObject(nameForObject).register()
             null -> {
+                // *Of or component definition
                 if (hasOneOfSchemas()) {
                     // oneOf
                     if (oneOfSchemas.all { it.type in simpleTypes }) {
-                        JsonPrimitive::class.asClassName().simpleType(nullable, default.makeDefaultPrimitive())
+                        JsonPrimitive::class.asClassName().simpleType(nullable, default?.makeDefaultPrimitive())
                     } else if (oneOfSchemas.any { it.type in simpleTypes } || discriminator.propertyName == null) {
                         // Some of oneOf are primitives so we can't make a truly polymorphic supertype?
                         JsonElement::class.asClassName().simpleType(nullable, default)
                     } else {
                         Type.OneOf(
-                            typeName = ClassName(packages.models, "I$nameForObject"),
+                            typeName = ClassName(modelPackageName(packages), "I$nameForObject"),
                             childrenMapping = oneOfSchemas.associate {
                                 val discriminatorValue = discriminator
                                     .mappings.entries
-                                    .find { pair -> pair.value == it.getReferenceId() }?.key
+                                    .find { pair -> pair.value == it.getComponentRef() }?.key
 
                                 it.makeType(nameForObject) to (discriminatorValue ?: it.name)
                             },
@@ -126,15 +145,35 @@ class OpenApiAnalyzer(
                     }
                 } else if (hasAllOfSchemas()) {
                     val allProps = allOfSchemas.flatMap { it.makeProps().entries }.associate { it.key to it.value }
-                    Type.WithProps.Object(ClassName(packages.models, nameForObject), allProps).register()
+                    Type.WithProps.Object(ClassName(modelPackageName(packages), nameForObject), allProps).register()
+                } else if (hasAnyOfSchemas()) {
+                    JsonElement::class.asClassName().simpleType(nullable, default)
                 } else {
-                    // It is a reference!
-                    Type.WithProps.Reference(ClassName(packages.models, name), makeProps()).register()
+                    // It is either a component definition or a reference!
+//                    error("Definition or reference ${getComponentRef()}")
+                    val className = makePackageName(getComponentRef()!!, packages.models)
+                    makeObject(className.substringAfterLast(".")).register()
+//                    Type.SimpleType(ClassName(className, className.substringAfterLast(".")))
                 }
             }
             else -> {
-                error("Unknown type: $type")
+                error("Unknown type: $schemaType")
             }
+        }
+    }
+
+    private fun Schema.makeObject(nameForObject: String): Type {
+        val props = makeProps()
+        return if (props.isNotEmpty()) {
+            Type.WithProps.Object(
+                ClassName(modelPackageName(packages), nameForObject.capitalize()),
+                props = makeProps()
+            )
+        } else {
+            Type.Alias(
+                ClassName(modelPackageName(packages), nameForObject.capitalize()),
+                JsonObject::class.asClassName().simpleType(nullable ?: false, default)
+            )
         }
     }
 

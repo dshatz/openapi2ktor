@@ -11,8 +11,12 @@ sealed class Type {
     sealed class WithProps: Type() {
         abstract val props: Map<String, Type>
         data class Object(override val typeName: TypeName, override val props: Map<String, Type>) : WithProps()
-        data class Reference(override val typeName: TypeName, override val props: Map<String, Type>): WithProps()
     }
+
+    data class Alias(
+        override val typeName: TypeName,
+        val aliasTarget: Type
+    ): Type()
 
     data class OneOf(override val typeName: TypeName, val childrenMapping: Map<Type, String>, val discriminator: String): Type()
 
