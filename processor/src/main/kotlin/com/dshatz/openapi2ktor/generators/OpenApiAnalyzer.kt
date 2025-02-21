@@ -13,11 +13,14 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.JsonNodeFactory
 import com.reprezen.jsonoverlay.Overlay
 import com.reprezen.kaizen.oasparser.ovl3.SchemaImpl
+import kotlinx.coroutines.*
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import javax.xml.transform.Source
 import javax.xml.validation.SchemaFactory
+import kotlin.coroutines.coroutineContext
+import kotlin.time.measureTime
 
 class OpenApiAnalyzer(
     private val typeStore: TypeStore,
@@ -27,29 +30,40 @@ class OpenApiAnalyzer(
     private val modelGenerator = KotlinxCodeGenerator()
     private val clientGenerator = KtorClientGenerator()
 
-    fun generate(api: OpenApi3): List<FileSpec> {
-        api.gatherComponentModels()
-        api.gatherPathModels()
-        typeStore.printTypes()
+    fun generate(api: OpenApi3): List<FileSpec> = runBlocking {
+        val modelsTime = measureTime {
+            withContext(Dispatchers.Default) {
+                api.gatherComponentModels().joinAll()
+            }
+        }
+
+        val pathTime = measureTime {
+            withContext(Dispatchers.Default) {
+                api.gatherPathModels().joinAll()
+            }
+        }
+
+        println("Models: $modelsTime")
+        println("Paths: $pathTime")
+//        typeStore.printTypes()
         val fileSpecs = modelGenerator.generate(typeStore)
-        return fileSpecs
+        return@runBlocking fileSpecs
     }
 
-    private fun OpenApi3.gatherComponentModels() {
+    private suspend fun OpenApi3.gatherComponentModels() = withContext(coroutineContext) {
         schemas.map { (schemaName, schema) ->
-            schema.makeType(schemaName, schema.jsonReference, components = true, isReference = false)
+            launch { schema.makeType(schemaName, schema.jsonReference, components = true, isReference = false) }
         }
     }
 
-    private fun OpenApi3.gatherPathModels() {
-        gatherPathResponseModels()
-        gatherPathRequestBodyModels()
+    private suspend fun OpenApi3.gatherPathModels(): List<Job> {
+        return gatherPathResponseModels() + gatherPathRequestBodyModels()
     }
 
-    private fun OpenApi3.gatherPathResponseModels() {
-        paths.forEach { (pathString, path) ->
-            path.operations.forEach { (verb, operation) ->
-                operation.responses.forEach { (statusCode, response) ->
+    private suspend fun OpenApi3.gatherPathResponseModels() = withContext(coroutineContext) {
+        return@withContext paths.flatMap { (pathString, path) ->
+            path.operations.flatMap { (verb, operation) ->
+                operation.responses.map { (statusCode, response) ->
                     val schema = response.contentMediaTypes.values.firstOrNull()?.schema
                     val modelName = makeResponseModelName(
                         verb = verb,
@@ -58,34 +72,44 @@ class OpenApiAnalyzer(
                         includeStatus = !statusCode.isSuccessCode() || operation.hasMultipleSuccessfulResponseCodes()
                     )
                     val jsonReference = schema?.let { Overlay.of(it).jsonReference } ?: Overlay.of(response).jsonReference
-                    schema.makeType(modelName, jsonReference, isReference = false)
+                    launch {
+                        schema.makeType(modelName, jsonReference, isReference = false)
+                    }
                 }
             }
         }
     }
 
-    private fun OpenApi3.gatherPathRequestBodyModels() {
-        paths.forEach { (pathString, path) ->
-            path.operations.filter { it.value.requestBody.contentMediaTypes.isNotEmpty()  }.forEach { (verb, operation) ->
+    private suspend fun OpenApi3.gatherPathRequestBodyModels() = withContext(coroutineContext) {
+        return@withContext paths.flatMap { (pathString, path) ->
+            path.operations.filter { it.value.requestBody.contentMediaTypes.isNotEmpty()  }.map { (verb, operation) ->
                 val schema = operation.requestBody.contentMediaTypes.values.first().schema
                 val modelName = makeRequestBodyModelName(verb, pathString)
-                schema.makeType(modelName, schema.jsonReference, isReference = false)
+                launch {
+                    schema.makeType(modelName, schema.jsonReference, isReference = false)
+                }
             }
         }
     }
 
 
-    private fun Schema.makeProps(): Map<String, Type> {
-        return properties.entries.associate { (name, schema) ->
-            val type = schema.makeType(name, schema.jsonReference, schema.isNullable, isReference = isPropAReference(name))
-            name to type
+    private suspend fun Schema.makeProps(): List<Deferred<Pair<String, Type>>> = withContext(coroutineContext) {
+        properties.entries.map { (name, schema) ->
+            async {
+                val type = schema.makeType(name, schema.jsonReference, schema.isNullable, isReference = isPropAReference(name))
+                name to type
+            }
         }
     }
 
     private val simpleTypes = listOf("string", "integer", "number", "boolean")
 
-    private fun Schema?.makeType(nameForObject: String, jsonReference: String, nullable: Boolean = false, components: Boolean = false, isReference: Boolean): Type {
-        println("Entering ${"component".takeIf { components } ?: ""} ${jsonReference.substringAfter("#")}")
+    private suspend fun List<Deferred<Pair<String, Type>>>.awaitProps(): Map<String, Type> {
+        return awaitAll().toMap()
+    }
+
+    private suspend fun Schema?.makeType(nameForObject: String, jsonReference: String, nullable: Boolean = false, components: Boolean = false, isReference: Boolean): Type {
+//        println("Entering ${"component".takeIf { components } ?: ""} ${jsonReference.substringAfter("#")}")
         fun Type.register(): Type = apply {
             if (this@makeType != null) {
                 if (isComponentSchema()) {
@@ -125,7 +149,7 @@ class OpenApiAnalyzer(
                     if (isReference) {
                         // Reference to something
                         val packageName = makePackageName(getComponentRef()!!, packages.models)
-                        println("Reference found! ${getComponentRef()} $packageName")
+//                        println("Reference found! ${getComponentRef()} $packageName")
                         Type.SimpleType(
                             ClassName(packageName, packageName.substringAfterLast(".").capitalize())
                         )
@@ -151,7 +175,7 @@ class OpenApiAnalyzer(
                             ).register()
                         }
                     } else if (hasAllOfSchemas()) {
-                        val allProps = allOfSchemas.flatMap { it.makeProps().entries }.associate { it.key to it.value }
+                        val allProps = allOfSchemas.flatMap { it.makeProps().awaitProps().entries }.associate { it.key to it.value }
                         Type.WithProps.Object(ClassName(packageName, nameForObject), allProps).register()
                     } else if (hasAnyOfSchemas()) {
                         JsonElement::class.asClassName().simpleType(nullable, default)
@@ -161,7 +185,7 @@ class OpenApiAnalyzer(
                             error("Reference in the wrong place!")
                         } else if (components) {
                             // Component definition
-                            println("Component def found! ${getComponentRef()}")
+//                            println("Component def found! ${getComponentRef()}")
                             val className = makePackageName(getComponentRef()!!, packages.models)
                             makeObject(className.substringAfterLast(".")).register()
                         } else {
@@ -193,12 +217,12 @@ class OpenApiAnalyzer(
         }
     }
 
-    private fun Schema.makeObject(nameForObject: String): Type {
-        val props = makeProps()
+    private suspend fun Schema.makeObject(nameForObject: String): Type {
+        val props = makeProps().awaitProps()
         return if (props.isNotEmpty()) {
             Type.WithProps.Object(
                 ClassName(modelPackageName(packages), nameForObject.capitalize()),
-                props = makeProps()
+                props = props
             )
         } else {
             Type.Alias(

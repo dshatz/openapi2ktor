@@ -23,7 +23,7 @@ private fun makeCamelCase(vararg parts: String?): String {
         }
 }
 
-private fun String.capitalize(): String = this.replaceFirstChar { it.uppercase() }
+fun String.capitalize(): String = this.replaceFirstChar { it.uppercase() }
 
 private fun String.safeName(): String =
     replace("/", "")
