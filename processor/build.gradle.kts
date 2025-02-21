@@ -11,5 +11,6 @@ dependencies {
     implementation("com.google.devtools.ksp:symbol-processing-api:2.1.10-1.0.30")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-cli-jvm:0.3.6")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.0")
     testImplementation(kotlin("test"))
 }
