@@ -3,6 +3,7 @@ package com.dshatz.openapi2ktor.generators.models
 import com.dshatz.openapi2ktor.generators.Type
 import com.dshatz.openapi2ktor.generators.TypeStore
 import com.dshatz.openapi2ktor.utils.makeCodeBlock
+import com.dshatz.openapi2ktor.utils.safePropName
 import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
 import kotlinx.serialization.DeserializationStrategy
@@ -13,7 +14,6 @@ import kotlinx.serialization.json.*
 import javax.lang.model.element.ExecutableElement
 
 class KotlinxCodeGenerator: IModelGenerator {
-    @OptIn(ExperimentalSerializationApi::class)
     override fun generate(typeStore: TypeStore): List<FileSpec> {
 
         val objectSpecs = generateObjects(typeStore)
@@ -35,25 +35,19 @@ class KotlinxCodeGenerator: IModelGenerator {
             val propsParams = type.props.entries.map { makeDataClassProps(it.key, it.value) }
 
             val uniqueProps = propsParams
-                .groupBy { it.first.name.lowercase() }
-                .mapValues { (lowerName, params) ->
+                .groupBy { it.propertySpec.name.lowercase() }
+                .entries
+                .asSequence()
+                .map { (lowerName, params) ->
                     if (params.size > 1) {
-                        params.mapIndexed { index, (prop, param) ->
+                        params.mapIndexed { index, propparam ->
                             val newName = lowerName + index
-                            Pair(
-                                prop
-                                    .toBuilder(name = newName)
-                                    .initializer(newName)
-                                    .addAnnotation(AnnotationSpec.builder(SerialName::class).addMember("%S", prop.name).build())
-                                    .build(),
-
-                                param
-                                    .toBuilder(name = newName)
-                                    .build()
-                            )
+                            propparam.updateName(newName)
                         }
                     } else params
-                }.values.flatten()
+                }.flatten().map {
+                    it.updateName(it.propertySpec.name.safePropName())
+                }
 
             if (!interfacesForOneOf.isNullOrEmpty()) {
                 typeSpecBuilder.addSuperinterfaces(interfacesForOneOf.map { it.typeName })
@@ -72,6 +66,30 @@ class KotlinxCodeGenerator: IModelGenerator {
             fileSpec.addType(typeSpecBuilder.build())
             fileSpec.build()
         }
+    }
+
+
+    private data class DataClassProp(
+        val propertySpec: PropertySpec,
+        val parameterSpec: ParameterSpec,
+        val serialName: String
+    )
+
+    private fun DataClassProp.updateName(newName: String): DataClassProp {
+        return DataClassProp(
+            propertySpec
+                .toBuilder(name = newName)
+                .initializer(newName)
+                .apply {
+                    annotations.removeIf { it.typeName == SerialName::class.asClassName() }
+                }
+                .addAnnotation(AnnotationSpec.builder(SerialName::class).addMember("%S", serialName).build())
+                .build(),
+            parameterSpec
+                .toBuilder(name = newName)
+                .build(),
+            serialName
+        )
     }
 
     private fun generateSuperInterfacesForOneOf(typeStore: TypeStore): List<FileSpec> {
@@ -109,20 +127,15 @@ class KotlinxCodeGenerator: IModelGenerator {
     }
 
 
-    private fun makeDataClassProps(name: String, type: Type): Pair<PropertySpec, ParameterSpec> {
-        val safeName = name.safePropName()
-        val prop = PropertySpec.builder(safeName, type.typeName).run {
-            if (safeName != name)
-                addAnnotation(AnnotationSpec.builder(SerialName::class).addMember("%S", name).build())
-            else this
-        }.initializer(safeName).build()
+    private fun makeDataClassProps(name: String, type: Type): DataClassProp {
+        val prop = PropertySpec.builder(name, type.typeName).initializer(name).build()
 
-        val param = ParameterSpec.builder(safeName, type.typeName).run {
+        val param = ParameterSpec.builder(name, type.typeName).run {
             if (type is Type.SimpleType && type.default != null) {
                 defaultValue(type.defaultValue())
             } else this
         }.build()
-        return prop to param
+        return DataClassProp(prop, param, name)
     }
 
     private fun Type.SimpleType.defaultValue(): CodeBlock {
