@@ -15,27 +15,52 @@ import javax.lang.model.element.ExecutableElement
 class KotlinxCodeGenerator: IModelGenerator {
     @OptIn(ExperimentalSerializationApi::class)
     override fun generate(typeStore: TypeStore): List<FileSpec> {
+
+        val objectSpecs = generateObjects(typeStore)
+        val superInterfaceSpecs = generateSuperInterfacesForOneOf(typeStore)
+        val aliases = generateTypeAliases(typeStore)
+        return objectSpecs + superInterfaceSpecs + aliases
+    }
+
+    private fun generateObjects(typeStore: TypeStore): List<FileSpec> {
         val typeToSuperInterfaces = interfaceMappingForOneOf(typeStore)
-        val polymorphicSerializers = typeStore.getTypes().values
-            .filterIsInstance<Type.OneOf>()
-            .associate { oneOf ->
-                oneOf.typeName to customPolymorphicSerializer(oneOf)
-            }
-        val objectSpecs = typeStore.getTypes().values.filterIsInstance<Type.WithProps>().map { type ->
+            .mapKeys { it.key.typeName }
+        return typeStore.getTypes().values.filterIsInstance<Type.WithProps.Object>().map { type ->
             val className = type.typeName as ClassName
             val fileSpec = FileSpec.builder(className)
 
-            val interfacesForOneOf = typeToSuperInterfaces[type]
+            val interfacesForOneOf = typeToSuperInterfaces[type.typeName]
             val typeSpecBuilder = TypeSpec.classBuilder(className)
 
-            val propsParams = type.props.entries.map { makeDataClassProps(it.key, it.value) }.toMutableList()
+            val propsParams = type.props.entries.map { makeDataClassProps(it.key, it.value) }
+
+            val uniqueProps = propsParams
+                .groupBy { it.first.name.lowercase() }
+                .mapValues { (lowerName, params) ->
+                    if (params.size > 1) {
+                        params.mapIndexed { index, (prop, param) ->
+                            val newName = lowerName + index
+                            Pair(
+                                prop
+                                    .toBuilder(name = newName)
+                                    .initializer(newName)
+                                    .addAnnotation(AnnotationSpec.builder(SerialName::class).addMember("%S", prop.name).build())
+                                    .build(),
+
+                                param
+                                    .toBuilder(name = newName)
+                                    .build()
+                            )
+                        }
+                    } else params
+                }.values.flatten()
 
             if (!interfacesForOneOf.isNullOrEmpty()) {
                 typeSpecBuilder.addSuperinterfaces(interfacesForOneOf.map { it.typeName })
             }
 
             val constructorBuilder = FunSpec.constructorBuilder()
-            propsParams.forEach { (prop, param) ->
+            uniqueProps.forEach { (prop, param) ->
                 constructorBuilder.addParameter(param)
                 typeSpecBuilder.addProperty(prop)
             }
@@ -47,20 +72,40 @@ class KotlinxCodeGenerator: IModelGenerator {
             fileSpec.addType(typeSpecBuilder.build())
             fileSpec.build()
         }
+    }
 
-        val superInterfaceSpecs = polymorphicSerializers.map { (superType, serializer) ->
+    private fun generateSuperInterfacesForOneOf(typeStore: TypeStore): List<FileSpec> {
+        val polymorphicSerializers = typeStore.getTypes().values
+            .filterIsInstance<Type.OneOf>()
+            .associate { oneOf ->
+                oneOf.typeName to customPolymorphicSerializer(oneOf)
+            }
+
+
+        return polymorphicSerializers.map { (superType, serializer) ->
             val serializerClass = serializer.first
             val serializerSpec = serializer.second
             val className = superType as ClassName
             val fileSpec = FileSpec.builder(className)
             val typeSpec = TypeSpec.interfaceBuilder(className)
                 .addAnnotation(AnnotationSpec.builder(Serializable::class).addMember("%T::class", serializerClass).build())
-                .addModifiers(KModifier.SEALED)
             fileSpec.addType(typeSpec.build())
             fileSpec.addType(serializerSpec)
             fileSpec.build()
         }
-        return objectSpecs + superInterfaceSpecs
+    }
+
+    private fun generateTypeAliases(typeStore: TypeStore): List<FileSpec> {
+        return typeStore.getTypes()
+            .values
+            .filterIsInstance<Type.Alias>()
+            .map { (typeAliasName, target) ->
+                val className = typeAliasName as ClassName
+                val aliasSpec = TypeAliasSpec.builder(className.simpleName, target.typeName).build()
+                FileSpec.builder(typeAliasName)
+                    .addTypeAlias(aliasSpec)
+                    .build()
+            }
     }
 
 

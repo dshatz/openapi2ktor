@@ -3,7 +3,6 @@ package com.dshatz.openapi2ktor.utils
 import com.reprezen.jsonoverlay.Overlay
 import com.reprezen.kaizen.oasparser.model3.Schema
 import com.squareup.kotlinpoet.CodeBlock
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
@@ -27,12 +26,20 @@ private fun makeCamelCase(vararg parts: String?): String {
 private fun String.safeName(): String =
     replace("/", "")
 
-fun Schema.isReference(): Boolean {
-    return Overlay.of(this).jsonReference.split("/").any { it.endsWith("#") }
+fun Schema.isPartOfComponent(): Boolean {
+    return Overlay.of(this).jsonReference.substringAfter("#").split("/").any { it.endsWith("#") }
 }
 
-fun Schema.getReferenceId(): String? {
-    return if (isReference()) {
+/**
+ * Check if this schema is actually a reference.
+ */
+fun Schema.isComponentSchema(): Boolean {
+    val pathElements = Overlay.of(this).jsonReference.split("/").dropWhile { !it.contains("#") }.drop(1)
+    return pathElements.first() == "components" && pathElements[1] in listOf("schemas") && pathElements.size == 3
+}
+
+fun Schema.getComponentRef(): String? {
+    return if (isComponentSchema()) {
         "#/" + Overlay.of(this)
             .jsonReference
             .split("/")
@@ -42,6 +49,30 @@ fun Schema.getReferenceId(): String? {
     } else {
         null
     }
+}
+
+fun Schema.modelPackageName(packages: Packages): String {
+    return makePackageName(Overlay.of(this).jsonReference, packages.models)
+}
+
+internal fun makePackageName(jsonReference: String, basePackage: String): String {
+    val parts = basePackage.split(".") + jsonReference
+        .split("/")
+        .dropWhile { !it.contains("#") }
+        .drop(1)
+
+    var isResponse = false
+    return parts.filterNot { it.isEmpty() }.mapIndexed { index, a ->
+        if (a == "responses") {
+            isResponse = true
+            a
+        }
+        else if (a == "schema") {
+            isResponse = false
+            null
+        }
+        else a.takeUnless { isResponse }
+    }.filterNotNull().joinToString(".")
 }
 
 fun Any.makeDefaultPrimitive(): JsonPrimitive? {

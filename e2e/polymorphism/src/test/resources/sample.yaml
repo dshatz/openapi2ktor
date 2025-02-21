@@ -18,7 +18,7 @@ components:
           type: integer
         name:
           type: string
-        userType:
+        user_type:
           type: string
     AdminUser:
       properties:
@@ -26,11 +26,59 @@ components:
           type: integer
         name:
           type: string
-        userType:
+        user_type:
           type: string
         beard:
           type: boolean
+    OrderList:
+      properties:
+        orders:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              amount:
+                type: integer
+    UserList:
+      type: array
+      items:
+        $ref: '#/components/schemas/User'
+    UserOrAdmin:
+      oneOf:
+        - "$ref": '#/components/schemas/User'
+        - "$ref": '#/components/schemas/AdminUser'
+      discriminator:
+        propertyName: user_type
+
+
 paths:
+  /orders:
+    get:
+      summary: Return a list of orders
+      description: Orders list
+      responses:
+        "200":
+          description: List of orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    amount:
+                      type: integer
+        "400":
+          description: Error
+          content:
+            application/json:
+              schema:
+                type: object
+
   /users:
     get:
       summary: Returns a list of users.
@@ -52,7 +100,7 @@ paths:
                     - "$ref": '#/components/schemas/User'
                     - "$ref": '#/components/schemas/AdminUser'
                   discriminator:
-                    propertyName: userType
+                    propertyName: user_type
         "201":
           description: A JSON array of user names
           content:
@@ -64,7 +112,7 @@ paths:
                     - "$ref": '#/components/schemas/User'
                     - "$ref": '#/components/schemas/AdminUser'
                   discriminator:
-                    propertyName: userType
+                    propertyName: user_type
                     mapping:
                       normal: '#/components/schemas/User'
                       admin: '#/components/schemas/AdminUser'
