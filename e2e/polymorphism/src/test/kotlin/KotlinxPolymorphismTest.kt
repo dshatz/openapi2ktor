@@ -2,9 +2,10 @@ import com.example.models.components.schemas.AdminUser.AdminUser
 import com.example.models.components.schemas.User.User
 import com.example.models.paths.orders.get.responses.GetOrdersResponse
 import com.example.models.paths.orders.get.responses.GetOrdersResponse400
+import com.example.models.paths.orders.get.responses.GetOrdersResponse403
 import com.example.models.paths.users.get.responses.GetUsersResponse200
 import com.example.models.paths.users.get.responses.GetUsersResponse201
-import com.example.models.paths.users.post.responses.PostUsersResponse
+import com.example.models.paths.users.post.responses.PostUsersResponse200
 import kotlinx.serialization.json.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -14,7 +15,7 @@ class KotlinxPolymorphismTest {
 
 
     @Test
-    fun testOneOf() {
+    fun oneOf() {
         val json = """
             [
               {
@@ -37,7 +38,7 @@ class KotlinxPolymorphismTest {
     }
 
     @Test
-    fun testOneOfCustomMapping() {
+    fun `oneOf with custom type mapping`() {
         val json = """
             [
               {
@@ -60,7 +61,7 @@ class KotlinxPolymorphismTest {
     }
 
     @Test
-    fun testAllOf() {
+    fun allOf() {
         val json = """
             {
                 "id": 0,
@@ -70,7 +71,7 @@ class KotlinxPolymorphismTest {
               }
         """.trimIndent()
 
-        val response = Json.decodeFromString<PostUsersResponse>(json)
+        val response = Json.decodeFromString<PostUsersResponse200>(json)
         assertEquals("string", response.name)
     }
 
@@ -87,7 +88,7 @@ class KotlinxPolymorphismTest {
     }
 
     @Test
-    fun `empty object`() {
+    fun `schema with no properties`() {
         val json = """
             {
                 "a": 11,
@@ -96,6 +97,15 @@ class KotlinxPolymorphismTest {
         """.trimIndent()
         val response = Json.decodeFromString<GetOrdersResponse400>(json)
         assertEquals(11, response["a"]?.jsonPrimitive?.int)
+    }
 
+    @Test
+    fun `missing contentMediaType and schema`() {
+        val json = """
+            {
+                "a": 2
+            }
+        """.trimIndent()
+        assertIs<JsonObject>(Json.decodeFromString<GetOrdersResponse403>(json))
     }
 }

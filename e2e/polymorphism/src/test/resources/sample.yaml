@@ -41,6 +41,9 @@ components:
                 type: integer
               amount:
                 type: integer
+              params:
+                type: array
+                items: {}
     UserList:
       type: array
       items:
@@ -78,6 +81,16 @@ paths:
             application/json:
               schema:
                 type: object
+        "403":
+          description: Empty response
+        "405":
+          description: array of references
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  "$ref": '#/components/schemas/OrderList'
 
   /users:
     get:
@@ -158,6 +171,15 @@ paths:
                 allOf:
                   - "$ref": '#/components/schemas/User'
                   - "$ref": '#/components/schemas/AdminUser'
+        '204':
+          description: "User already exists"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  existing:
+                    "$ref": '#/components/schemas/UserOrAdmin'
         '400':
           description: "User created but here is an error"
           content:

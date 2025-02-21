@@ -23,12 +23,11 @@ private fun makeCamelCase(vararg parts: String?): String {
         }
 }
 
+private fun String.capitalize(): String = this.replaceFirstChar { it.uppercase() }
+
 private fun String.safeName(): String =
     replace("/", "")
 
-fun Schema.isPartOfComponent(): Boolean {
-    return Overlay.of(this).jsonReference.substringAfter("#").split("/").any { it.endsWith("#") }
-}
 
 /**
  * Check if this schema is actually a reference.
@@ -54,6 +53,8 @@ fun Schema.getComponentRef(): String? {
 fun Schema.modelPackageName(packages: Packages): String {
     return makePackageName(Overlay.of(this).jsonReference, packages.models)
 }
+
+val Schema.jsonReference: String get() = Overlay.of(this).jsonReference
 
 internal fun makePackageName(jsonReference: String, basePackage: String): String {
     val parts = basePackage.split(".") + jsonReference
@@ -82,6 +83,19 @@ fun Any.makeDefaultPrimitive(): JsonPrimitive? {
         is Boolean -> JsonPrimitive(this)
         else -> null
     }
+}
+
+fun Schema.isArrayItemAReference(): Boolean {
+    return Overlay.of(this).toJson()?.get("items")?.get("\$ref") != null
+}
+
+fun Schema.isPropAReference(prop: String): Boolean {
+    return Overlay.of(this).toJson().get("properties")?.get(prop)?.get("\$ref") != null
+}
+
+fun String.safePropName(): String {
+    val parts = split(".", "_")
+    return parts.first() + parts.drop(1).joinToString("") { it.capitalize() }
 }
 
 fun JsonPrimitive.makeCodeBlock(): CodeBlock {

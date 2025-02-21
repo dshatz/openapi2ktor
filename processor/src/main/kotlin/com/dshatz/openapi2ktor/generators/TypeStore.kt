@@ -10,9 +10,9 @@ class TypeStore {
     private val types: MutableMap<String, Type> = mutableMapOf()
     fun getTypes(): Map<String, Type> = types.toMap()
 
-    fun registerType(schema: Schema, type: Type) {
-        println("Registering type! ${type.typeName}; $schema")
-        types[Overlay.of(schema).jsonReference] = type
+    fun registerType(jsonReference: String, type: Type) {
+        println("Registering type! ${type.typeName}; $jsonReference")
+        types[jsonReference] = type
     }
 
     fun registerComponentSchema(referenceId: String, type: Type) {
