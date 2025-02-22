@@ -3,6 +3,7 @@ package com.dshatz.openapi2ktor.generators
 import com.reprezen.jsonoverlay.Overlay
 import com.reprezen.kaizen.oasparser.model3.Schema
 import com.squareup.kotlinpoet.ClassName
+import com.squareup.kotlinpoet.TypeName
 
 class TypeStore {
 
@@ -10,9 +11,19 @@ class TypeStore {
     private val types: MutableMap<String, Type> = mutableMapOf()
     fun getTypes(): Map<String, Type> = types.toMap()
 
+    private val checkForDuplicates = true
+
+    val addedTypes = mutableMapOf<TypeName, String>()
+
     fun registerType(jsonReference: String, type: Type) {
         println("Registering type! ${type.typeName}; $jsonReference")
+        if (checkForDuplicates) {
+            if (addedTypes[type.typeName] != null && (type.typeName as ClassName).simpleName.contains("labels")) {
+                error("Duplicate type! ${type.typeName} ${jsonReference.stripFilePathFromRef()} ${addedTypes[type.typeName]?.stripFilePathFromRef()}")
+            }
+        }
         types[jsonReference] = type
+        addedTypes[type.typeName] = jsonReference
     }
 
     fun registerComponentSchema(referenceId: String, type: Type) {

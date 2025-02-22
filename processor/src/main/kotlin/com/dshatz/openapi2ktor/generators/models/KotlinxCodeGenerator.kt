@@ -6,10 +6,7 @@ import com.dshatz.openapi2ktor.utils.makeCodeBlock
 import com.dshatz.openapi2ktor.utils.safePropName
 import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
-import kotlinx.serialization.DeserializationStrategy
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.*
 import kotlinx.serialization.json.*
 import javax.lang.model.element.ExecutableElement
 
@@ -82,8 +79,9 @@ class KotlinxCodeGenerator: IModelGenerator {
                 .initializer(newName)
                 .apply {
                     annotations.removeIf { it.typeName == SerialName::class.asClassName() }
+                    if (serialName != newName)
+                        addAnnotation(AnnotationSpec.builder(SerialName::class).addMember("%S", serialName).build())
                 }
-                .addAnnotation(AnnotationSpec.builder(SerialName::class).addMember("%S", serialName).build())
                 .build(),
             parameterSpec
                 .toBuilder(name = newName)
@@ -128,18 +126,30 @@ class KotlinxCodeGenerator: IModelGenerator {
 
 
     private fun makeDataClassProps(name: String, type: Type): DataClassProp {
-        val prop = PropertySpec.builder(name, type.typeName).initializer(name).build()
+        val makeNullable = type is Type.SimpleType && !type.required && !type.typeName.isNullable
+        val finalType =
+            if (makeNullable) {
+                type.typeName.copy(nullable = true)
+            } else type.typeName
 
-        val param = ParameterSpec.builder(name, type.typeName).run {
-            if (type is Type.SimpleType && type.default != null) {
-                defaultValue(type.defaultValue())
-            } else this
-        }.build()
-        return DataClassProp(prop, param, name)
+        val prop = PropertySpec.builder(name, finalType).initializer(name)
+        val param = ParameterSpec.builder(name, finalType)
+
+        if (type is Type.SimpleType) {
+            if (type.default != null) {
+                param.defaultValue(type.defaultValue())
+            } else if (makeNullable) {
+                param.defaultValue(CodeBlock.of("null"))
+            }
+            if (type.required) {
+                param.addAnnotation(Required::class)
+            }
+        }
+        return DataClassProp(prop.build(), param.build(), name)
     }
 
     private fun Type.SimpleType.defaultValue(): CodeBlock {
-        return when (this.typeName) {
+        return when (this.typeName.copy(nullable = false)) {
             String::class.asTypeName() -> CodeBlock.of("%S", default)
             JsonPrimitive::class.asTypeName() -> (default as JsonPrimitive).makeCodeBlock()
             else -> CodeBlock.of("%L", default)
