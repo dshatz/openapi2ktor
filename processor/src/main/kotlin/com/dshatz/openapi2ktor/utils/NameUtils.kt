@@ -29,16 +29,18 @@ private fun String.safeName(): String =
     replace("/", "")
 
 
-/**
- * Check if this schema is actually a reference.
- */
-fun Schema.isComponentSchema(): Boolean {
+fun Schema.isComponentSchemaRoot(): Boolean {
     val pathElements = Overlay.of(this).jsonReference.split("/").dropWhile { !it.contains("#") }.drop(1)
     return pathElements.first() == "components" && pathElements[1] in listOf("schemas") && pathElements.size == 3
 }
 
+fun Schema.isPartOfComponentSchema(): Boolean {
+    val pathElements = Overlay.of(this).jsonReference.split("/").dropWhile { !it.contains("#") }.drop(1)
+    return pathElements.first() == "components"
+}
+
 fun Schema.getComponentRef(): String? {
-    return if (isComponentSchema()) {
+    return if (isPartOfComponentSchema()) {
         "#/" + Overlay.of(this)
             .jsonReference
             .split("/")
@@ -57,23 +59,68 @@ fun Schema.modelPackageName(packages: Packages): String {
 val Schema.jsonReference: String get() = Overlay.of(this).jsonReference
 
 internal fun makePackageName(jsonReference: String, basePackage: String): String {
-    val parts = basePackage.split(".") + jsonReference
-        .split("/")
-        .dropWhile { !it.contains("#") }
-        .drop(1)
+    try {
 
-    var isResponse = false
-    return parts.filterNot { it.isEmpty() }.mapIndexed { index, a ->
-        if (a == "responses") {
-            isResponse = true
-            a
+        val parts = jsonReference
+            .split("/")
+            .dropWhile { !it.contains("#") }
+            .drop(1)
+            .filterNot { it.isBlank() }
+
+
+        val typeIndex = if (parts[0] == "components") 1 else 0
+        val isResponses = parts[typeIndex] == "responses"
+        val isSchemas = parts[typeIndex] == "schemas"
+        val isPaths = parts[typeIndex] == "paths"
+
+        val cleanParts = if (isPaths) {
+            if ("responses" in parts) {
+                val responsesIndex = parts.indexOf("responses")
+                val statusIndex = responsesIndex + 1
+                val path = parts.subList(0, responsesIndex)
+                val responseSegment = "response" + parts[statusIndex]
+                val remaining = parts.subList(responsesIndex, parts.size).dropWhile { it != "schema" }.drop(1)
+                buildList {
+                    addAll(path)
+                    add(responseSegment)
+                    addAll(remaining)
+                }
+            } else if ("requestBody" in parts) {
+                val requestBodyIndex = parts.indexOf("requestBody")
+                val schemaIndex = parts.indexOf("schema")
+
+                buildList<String> {
+                    addAll(parts.subList(0, requestBodyIndex + 1))
+                    addAll(parts.subList(schemaIndex + 1, parts.size))
+                }
+            } else {
+                error("Unknown type of path $jsonReference")
+            }
+        } else if (isSchemas) {
+            parts
+        } else if (isResponses) {
+            val schemaIndex = parts.indexOf("schema")
+            val pathInSchema = parts.subList(schemaIndex + 1, parts.size)
+            buildList {
+                addAll(parts.subList(0, 3)) // responses/<name>
+                addAll(pathInSchema)
+            }
+        } else {
+            emptyList()
         }
-        else if (a == "schema") {
-            isResponse = false
-            null
-        }
-        else a.takeUnless { isResponse }
-    }.filterNotNull().joinToString(".")
+        return "$basePackage." + cleanParts.joinToString(".") { it.safePathSegment() }
+    } catch (e: Exception) {
+        e.printStackTrace()
+        error("Failed to generate package name for $jsonReference")
+    }
+}
+
+private fun String.safePathSegment(): String {
+    return if (startsWith("{") && endsWith("}")) {
+        "_" + drop(1).dropLast(1).safePropName() + "_"
+    } else {
+        safePropName()
+    }
 }
 
 fun Any.makeDefaultPrimitive(): JsonPrimitive? {

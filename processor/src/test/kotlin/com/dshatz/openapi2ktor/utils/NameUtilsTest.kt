@@ -1,6 +1,5 @@
 package com.dshatz.openapi2ktor.utils
 
-import com.reprezen.jsonoverlay.Overlay
 import com.reprezen.kaizen.oasparser.OpenApiParser
 import com.reprezen.kaizen.oasparser.model3.OpenApi3
 import com.reprezen.kaizen.oasparser.model3.Response
@@ -75,6 +74,44 @@ class NameUtilsTest {
     fun `safe prop name`() {
         assertEquals("comGithubBaseImageId", "com.github.baseImage.id".safePropName())
         assertEquals("mySnakeProp", "my_snake_prop".safePropName())
+    }
+
+    @Test
+    fun `model package name`() {
+        val base = "com.example.models"
+        val jsonReference = "file:/github.yaml#/components/paths//projects/columns/{column_id}/moves//post/responses/201/content/application/json/schema"
+        val packageName = makePackageName(jsonReference, base)
+        assertEquals("com.example.models.components.paths.projects.columns._columnId_.moves.post.response201", packageName)
+
+
+        val ref3 = "file:/github.yaml#/components/responses/actions_runner_labels_readonly/content/application/json/schema/properties/labels"
+        val ref4 = "file:/github.yaml#/components/responses/actions_runner_labels/content/application/json/schema/properties/labels"
+        val ref5 = "file:/github.yaml#/components/schemas/runner/properties/labels"
+        assertNotEquals(makePackageName(ref3, base), makePackageName(ref4, base))
+        assertEquals("$base.components.responses.actionsRunnerLabelsReadonly.properties.labels", makePackageName(ref3, base))
+        assertEquals(
+            "$base.components.schemas.runner.properties.labels",
+            makePackageName(ref5, base)
+        )
+
+        val refArray = "file:/spot_api.yaml#/components/schemas/ocoOrder/properties/orders/items"
+        assertEquals(
+            "$base.components.schemas.ocoOrder.properties.orders.items",
+            makePackageName(refArray, base)
+        )
+
+        val refLong = "file:/spot_api.yaml#/paths//sapi/v1/margin/allOrderList//get/responses/200/content/application/json/schema/items/properties/orders/items"
+        assertEquals(
+            "$base.paths.sapi.v1.margin.allOrderList.get.response200.items.properties.orders.items",
+            makePackageName(refLong, base)
+        )
+
+        val refRequest = "file:/github.yaml#/paths//applications/{client_id}/token/scoped//post/requestBody/content/application/json/schema"
+        assertEquals(
+            "$base.paths.applications._clientId_.token.scoped.post.requestBody",
+            makePackageName(refRequest, base)
+
+        )
     }
 
     private fun Response.defaultSchema(): Schema = contentMediaTypes.values.first().schema!!

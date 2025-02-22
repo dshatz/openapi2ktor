@@ -1,15 +1,19 @@
 import com.example.models.components.schemas.AdminUser.AdminUser
 import com.example.models.components.schemas.User.User
-import com.example.models.paths.orders.get.responses.GetOrdersResponse
-import com.example.models.paths.orders.get.responses.GetOrdersResponse400
-import com.example.models.paths.orders.get.responses.GetOrdersResponse403
-import com.example.models.paths.users.get.responses.GetUsersResponse200
-import com.example.models.paths.users.get.responses.GetUsersResponse201
-import com.example.models.paths.users.post.responses.PostUsersResponse200
+import com.example.models.paths.orders.get.response200.GetOrdersResponse
+import com.example.models.paths.orders.get.response400.GetOrdersResponse400
+import com.example.models.paths.orders.get.response403.GetOrdersResponse403
+import com.example.models.paths.users.get.response200.GetUsersResponse200
+import com.example.models.paths.users.get.response201.GetUsersResponse201
+import com.example.models.paths.users.post.response200.PostUsersResponse200
+import com.example.models.paths.users.post.response400.PostUsersResponse400
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.MissingFieldException
 import kotlinx.serialization.json.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 
 class KotlinxPolymorphismTest {
 
@@ -107,5 +111,31 @@ class KotlinxPolymorphismTest {
             }
         """.trimIndent()
         assertIs<JsonObject>(Json.decodeFromString<GetOrdersResponse403>(json))
+    }
+
+    @OptIn(ExperimentalSerializationApi::class)
+    @Test(MissingFieldException::class)
+    fun `test missing required prop`() {
+        val json = """
+            {
+                "id": 0,
+                "name": "Bob",
+                "user_type": "User"
+            }
+        """.trimIndent()
+        Json.decodeFromString<PostUsersResponse400>(json)
+    }
+
+    @Test
+    fun `test optional fields default to null`() {
+        val json = """
+            {
+              "error": "very bad error"
+            }
+        """.trimIndent()
+        val result = Json.decodeFromString<PostUsersResponse400>(json)
+        assertNull(result.name)
+        assertNull(result.id)
+        assertNull(result.userType)
     }
 }

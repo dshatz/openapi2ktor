@@ -140,10 +140,10 @@ paths:
                   properties:
                     details:
                       type: string
+                      default: ''
                     count:
                       type: integer
-                  required:
-                    - details
+                      nullable: true
 
     post:
       summary: Make a new user
@@ -157,6 +157,10 @@ paths:
                 username:
                   type: string
                   default: "user1"
+                details:
+                  type: string
+                  default: ''
+                  nullable: true
                 age:
                   oneOf:
                     - type: integer
