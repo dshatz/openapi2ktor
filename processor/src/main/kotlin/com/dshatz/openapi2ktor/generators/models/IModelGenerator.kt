@@ -5,5 +5,5 @@ import com.squareup.kotlinpoet.FileSpec
 
 interface IModelGenerator {
 
-    fun generate(typeStore: TypeStore): List<FileSpec>
+    fun generate(): List<FileSpec>
 }
