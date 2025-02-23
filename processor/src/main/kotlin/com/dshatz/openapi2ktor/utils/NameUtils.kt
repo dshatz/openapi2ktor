@@ -1,8 +1,11 @@
 package com.dshatz.openapi2ktor.utils
 
+import com.dshatz.openapi2ktor.generators.Type
 import com.reprezen.jsonoverlay.Overlay
 import com.reprezen.kaizen.oasparser.model3.Schema
+import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.CodeBlock
+import com.squareup.kotlinpoet.ParameterizedTypeName
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
@@ -141,11 +144,29 @@ fun Schema.isPropAReference(prop: String): Boolean {
 }
 
 fun String.safePropName(): String {
-    val parts = split(".", "_")
+    val parts = split(".", "_", "-")
+        .run {
+            if (this@safePropName.contains("/")) {
+                split('/').mapIndexed { index, it -> if (index != 0) it.capitalize() else it }
+                    .flatMapIndexed { index: Int, s: String -> listOfNotNull("slash".takeUnless { index == 0 }, s) }
+            } else this
+        }
     return parts.first() + parts.drop(1).joinToString("") { it.capitalize() }
 }
 
 fun JsonPrimitive.makeCodeBlock(): CodeBlock {
     val template = if (isString) "%T(%S)" else "%T(%L)"
     return CodeBlock.of(template, JsonPrimitive::class, contentOrNull)
+}
+
+fun Type.WithTypeName.simpleName(): String {
+    return (typeName as? ClassName)?.simpleName ?: (typeName as? ParameterizedTypeName).toString()
+}
+
+fun Type.WithTypeName.packageName(): String {
+    return (typeName as? ClassName)?.packageName ?: (typeName as? ParameterizedTypeName).toString()
+}
+
+fun String.stripFilePathFromRef(): String {
+    return "#" + substringAfter("#")
 }

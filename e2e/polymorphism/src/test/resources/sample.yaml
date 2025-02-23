@@ -13,6 +13,7 @@ servers:
 components:
   schemas:
     User:
+      nullable: true
       properties:
         id:
           type: integer
@@ -30,6 +31,12 @@ components:
           type: string
         beard:
           type: boolean
+        events:
+          type: array
+          default:
+            - push
+          items:
+            type: string
     OrderList:
       properties:
         orders:
@@ -41,9 +48,38 @@ components:
                 type: integer
               amount:
                 type: integer
+              config:
+                "$ref": '#/components/schemas/webhook-config-insecure-ssl'
               params:
                 type: array
                 items: {}
+    UserAndOrder:
+      allOf:
+        - "$ref": '#/components/schemas/User'
+        - "$ref": '#/components/schemas/OrderList'
+    webhook-config-url:
+      type: string
+      description: The URL to which the payloads will be delivered.
+      example: https://example.com/webhook
+      format: uri
+      nullable: true
+    webhook-config-insecure-ssl:
+      oneOf:
+        - type: string
+          description: Determines whether the SSL certificate of the host for `url`
+            will be verified when delivering payloads. Supported values include `0`
+            (verification is performed) and `1` (verification is not performed). The
+            default is `0`. **We strongly recommend not setting this to `1` as you are
+            subject to man-in-the-middle and other attacks.**
+          example: '"0"'
+        - type: number
+    issue-event-for-issue:
+      title: Issue Event for Issue
+      description: Issue Event for Issue
+      anyOf:
+        - "$ref": "#/components/schemas/OrderList"
+        - "$ref": "#/components/schemas/AdminUser"
+        - "$ref": "#/components/schemas/UserOrAdmin"
     UserList:
       type: array
       items:
@@ -54,6 +90,15 @@ components:
         - "$ref": '#/components/schemas/AdminUser'
       discriminator:
         propertyName: user_type
+    allowed-actions:
+      type: string
+      nullable: true
+      description: string enum
+      enum:
+        - all
+        - local_only
+        - selected
+        - null
 
 
 paths:
@@ -184,6 +229,8 @@ paths:
                 properties:
                   existing:
                     "$ref": '#/components/schemas/UserOrAdmin'
+                  events:
+                    "$ref": '#/components/schemas/issue-event-for-issue'
         '400':
           description: "User created but here is an error"
           content:
@@ -194,6 +241,19 @@ paths:
                   - type: object
                     required:
                       - error
+                      - path
                     properties:
                       error:
                         type: string
+                      allowed_actions:
+                        "$ref": '#/components/schemas/allowed-actions'
+                      path:
+                        type: string
+                        nullable: true
+                        default: /
+                        enum:
+                          - /
+                          - /docs
+                          - null
+                      webhook-url:
+                        "$ref": '#/components/schemas/webhook-config-url'
