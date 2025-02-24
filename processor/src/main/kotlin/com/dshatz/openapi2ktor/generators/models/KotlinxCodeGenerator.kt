@@ -2,23 +2,30 @@ package com.dshatz.openapi2ktor.generators.models
 
 import com.dshatz.openapi2ktor.generators.Type
 import com.dshatz.openapi2ktor.generators.TypeStore
-import com.dshatz.openapi2ktor.utils.makeCodeBlock
-import com.dshatz.openapi2ktor.utils.makeDefaultPrimitive
-import com.dshatz.openapi2ktor.utils.safePropName
+import com.dshatz.openapi2ktor.utils.*
 import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
 import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.*
+import java.io.Serial
 
-class KotlinxCodeGenerator(private val typeStore: TypeStore): IModelGenerator {
+class KotlinxCodeGenerator(private val typeStore: TypeStore, private val packages: Packages): IModelGenerator {
+
+    private lateinit var responseMappings: ResponseInterfaceResult
+
     override fun generate(): List<FileSpec> {
+
+        responseMappings = generateResponseInterfaces()
+
         val objectSpecs = generateObjects()
         val superInterfaceSpecs = generateSuperInterfacesForOneOf(typeStore)
         val aliases = generateTypeAliases(typeStore)
         val enums = generateEnums(typeStore)
-        return objectSpecs + superInterfaceSpecs + aliases + enums
+        return objectSpecs + superInterfaceSpecs + aliases + enums + responseMappings.files
     }
-
 
     private fun generateObjects(): List<FileSpec> {
         val typeToSuperInterfaces = interfaceMappingForOneOf(typeStore)
@@ -49,6 +56,10 @@ class KotlinxCodeGenerator(private val typeStore: TypeStore): IModelGenerator {
 
             if (!interfacesForOneOf.isNullOrEmpty()) {
                 typeSpecBuilder.addSuperinterfaces(interfacesForOneOf.map { it.typeName })
+            }
+
+            responseMappings.responseSuperclasses[type]?.let {
+                typeSpecBuilder.addSuperinterface(it)
             }
 
             val constructorBuilder = FunSpec.constructorBuilder()
@@ -112,6 +123,126 @@ class KotlinxCodeGenerator(private val typeStore: TypeStore): IModelGenerator {
         }
     }
 
+    private fun generatePrimitiveResponseWrappers(types: Collection<TypeStore.ResponseTypeInfo>, superInterface: TypeName): Map<Type, FileSpec> {
+        val wrappers = types.associateWithNotNull { (type, jsonReference) ->
+            val wrapper = (typeStore.getTypes()[jsonReference] as? Type.WithTypeName.PrimitiveWrapper)
+            wrapper
+        }.mapKeys { it.key.type }
+        return wrappers.mapValues { (type, wrapper) ->
+            val className = wrapper.typeName as ClassName
+            val fileSpec = FileSpec.builder(className)
+            val wrappedType = wrapper.wrappedType.makeTypeName()
+
+            val serializerClassname = ClassName(className.packageName, className.simpleName + "Serializer")
+
+            val typeSpec = TypeSpec.classBuilder(className)
+                .addSuperinterface(ClassName(packages.client, "Wrapper").parameterizedBy(wrappedType))
+                .addModifiers(KModifier.DATA)
+                .addAnnotation(AnnotationSpec.builder(Serializable::class)
+                    .addMember("%T::class", serializerClassname).build())
+                .addProperty(
+                    PropertySpec.builder("d", wrappedType)
+                        .addModifiers(KModifier.OVERRIDE)
+                        .initializer("d").build()
+                )
+                .primaryConstructor(
+                    FunSpec.constructorBuilder().addParameter(
+                        ParameterSpec.builder("d", wrappedType).build()
+                    ).build()
+                )
+                .addSuperinterface(superInterface)
+                .build()
+
+            /**
+             * class GetUsersListResponse205Serializer: KSerializer<GetUsersListResponse205> {
+             *         override val descriptor: SerialDescriptor = serializer<List<String>>().descriptor
+             *         override fun deserialize(decoder: Decoder): GetUsersListResponse205 {
+             *             return GetUsersListResponse205(decoder.decodeSerializableValue(serializer()))
+             *         }
+             *         override fun serialize(encoder: Encoder, value: GetUsersListResponse205) {
+             *             encoder.encodeSerializableValue(serializer(), value.data)
+             *         }
+             *     }
+             */
+            val serializerMember = MemberName("kotlinx.serialization", "serializer")
+            val serializer = TypeSpec.classBuilder(serializerClassname)
+                .addSuperinterface(KSerializer::class.asTypeName().parameterizedBy(className))
+                .addProperty(
+                    PropertySpec.builder("descriptor", SerialDescriptor::class, KModifier.OVERRIDE)
+                        .initializer("serializer<%T>().descriptor", wrappedType).build()
+                )
+                .addFunction(
+                    FunSpec.builder("deserialize")
+                        .addModifiers(KModifier.OVERRIDE)
+                        .returns(className)
+                        .addParameter(ParameterSpec("decoder", Decoder::class.asTypeName()))
+                        .addCode("return %T(decoder.decodeSerializableValue(%M()))", className, serializerMember)
+                        .build()
+                )
+                .addFunction(
+                    FunSpec.builder("serialize")
+                        .addModifiers(KModifier.OVERRIDE)
+                        .addParameters(listOf(
+                            ParameterSpec("encoder", Encoder::class.asTypeName()),
+                            ParameterSpec("value", className)
+                        ))
+                        .addCode("encoder.encodeSerializableValue(%M(), value.d)", serializerMember)
+                        .build()
+                ).build()
+            fileSpec.addType(typeSpec).addType(serializer).build()
+        }
+    }
+
+    private fun generateResponseInterfaces(): ResponseInterfaceResult {
+        val results = typeStore.getAllResponseTypes().map { pathId -> // e.g.GetUsers
+            val responseTypeInfos = typeStore.getResponseMapping(pathId)
+            val successTypes = responseTypeInfos.filterKeys { it.isSuccessCode() }
+            val otherTypes = responseTypeInfos.filterKeys { !it.isSuccessCode() }
+
+            val iResponseClass = typeStore.getResponseSuccessInterface(pathId)
+            val iErrorClass = typeStore.getResponseErrorInterface(pathId)
+
+            /*val packages = responseTypeInfos.values.map { makePackageName(it.jsonReference, packages.models) }
+            assert(packages.toSet().size == 1, lazyMessage = { "packages differ! $packages" })*/
+
+            val iResponse = iResponseClass?.let {
+                TypeSpec.interfaceBuilder(iResponseClass).addModifiers(KModifier.SEALED).build()
+            }
+            val iError = iErrorClass?.let {
+                TypeSpec.interfaceBuilder(iErrorClass).addModifiers(KModifier.SEALED).build()
+            }
+            val successWrappedTypes = iResponseClass?.let {
+                generatePrimitiveResponseWrappers(successTypes.values, iResponseClass)
+            }
+            val errorWrappedTypes = iErrorClass?.let {
+                generatePrimitiveResponseWrappers(otherTypes.values, iErrorClass)
+            }
+
+            val successFile = if (iResponse != null) {
+                FileSpec.builder(iResponseClass).addType(iResponse).build()
+            } else null
+
+            val errorFile = if (iError != null) {
+                FileSpec.builder(iErrorClass).addType(iError).build()
+            } else null
+
+            Pair(
+                first = successWrappedTypes?.values.orEmpty()
+                        + errorWrappedTypes?.values.orEmpty()
+                        + listOfNotNull(successFile, errorFile),
+                second =
+                    successTypes.mapKeys { it.value.type }.mapValues { iResponseClass }
+                            + otherTypes.mapKeys { it.value.type }.mapValues { iErrorClass }
+            )
+        }
+        return ResponseInterfaceResult(
+            results.flatMap { it.first },
+            results.flatMap { it.second.entries }.associate { it.key to it.value }
+        )
+    }
+
+    private data class ResponseInterfaceResult(val files: List<FileSpec>, val responseSuperclasses: Map<Type, ClassName?>)
+
     private fun generateTypeAliases(typeStore: TypeStore): List<FileSpec> {
         return typeStore.getTypes()
             .values
@@ -148,11 +279,6 @@ class KotlinxCodeGenerator(private val typeStore: TypeStore): IModelGenerator {
             }
     }
 
-    private fun resolveReference(typeStore: TypeStore, jsonReference: String): Type {
-        return typeStore.getTypes()[jsonReference] ?:
-        error("Could not resolve reference $jsonReference")
-    }
-
     private fun Type.WithTypeName.Object.makeDataClassProps(typeStore: TypeStore, name: String, type: Type): DataClassProp {
         val isRequired = name in requiredProps
         val defaultValue = defaultValues[name].run {
@@ -160,7 +286,7 @@ class KotlinxCodeGenerator(private val typeStore: TypeStore): IModelGenerator {
             else this
         }
 
-        val actualType = if (type is Type.Reference) resolveReference(typeStore, type.jsonReference) else type
+        val actualType = if (type is Type.Reference) typeStore.resolveReference(type.jsonReference) else type
         val isNullable = actualType.makeTypeName().isNullable
 
         val finalType =
@@ -261,8 +387,9 @@ class KotlinxCodeGenerator(private val typeStore: TypeStore): IModelGenerator {
     private fun <T: Type> T.makeTypeName(): TypeName {
         return when (this) {
             is Type.WithTypeName -> typeName as ClassName
-            is Type.Reference -> resolveReference(typeStore, jsonReference).makeTypeName()
+            is Type.Reference -> typeStore.resolveReference(jsonReference).makeTypeName()
             is Type.List -> List::class.asTypeName().parameterizedBy(itemsType.makeTypeName())
+            is Type.SimpleType -> this.kotlinType
             else -> { error("What type is this? $this") }
         }
     }

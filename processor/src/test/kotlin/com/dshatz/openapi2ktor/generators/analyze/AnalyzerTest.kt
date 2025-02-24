@@ -1,11 +1,15 @@
-package com.dshatz.openapi2ktor.generators
+package com.dshatz.openapi2ktor.generators.analyze
 
+import com.dshatz.openapi2ktor.generators.ObjectAssertScope
+import com.dshatz.openapi2ktor.generators.Type
 import com.dshatz.openapi2ktor.generators.Type.Companion.simpleType
+import com.dshatz.openapi2ktor.generators.TypeAssertScope
+import com.dshatz.openapi2ktor.generators.TypeStore
 import com.dshatz.openapi2ktor.utils.*
 import com.reprezen.kaizen.oasparser.OpenApiParser
 import com.reprezen.kaizen.oasparser.model3.OpenApi3
 import com.squareup.kotlinpoet.asClassName
-import kotlinx.coroutines.delay
+import com.squareup.kotlinpoet.asTypeName
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -55,7 +59,7 @@ class AnalyzerTest {
     fun `schema with a primitive type`() = runTest {
         val schema = api.schemas["webhook-config-url"]!!
         analyzer.processComponent("webhook-config-url", schema)
-        schema.jsonReference.assertComponentSchemaGenerated("WebhookConfigUrl") {
+        assertCanResolve("#/components/schemas/webhook-config-url") {
             assertType(String::class.type(true))
         }
     }
@@ -97,9 +101,9 @@ class AnalyzerTest {
     fun `path response with oneOf and custom mapping`() = runTest {
         val op = api.paths["/users"]!!.get
         val response = op.responses["201"]!!
-        analyzer.processPathResponse(op, response, "/users", statusCode = "201")
-        assertGenerated("GetUsersResponse201", packages.models + ".paths.users.get.response201") {
-            assertAlias {
+        analyzer.processPathResponse(op, response, "/users", statusCode = 201, wrapPrimitives = true)
+        assertGenerated("GetUsersResponse201", packages.models + ".paths.users.get.response") {
+            assertPrimitiveWrapper {
                 assertArray {
                     assertOneOf {
                         assertOneOfType("normal") {
@@ -118,8 +122,8 @@ class AnalyzerTest {
     fun `path response with enum`() = runTest {
         val op = api.paths["/users"]!!.post
         val response = op.responses["400"]!!
-        analyzer.processPathResponse(op, response, "/users", "400", verb = "post")
-        assertGenerated("PostUsersResponse400", packages.models + ".paths.users.post.response400") {
+        analyzer.processPathResponse(op, response, "/users", 400, verb = "post")
+        assertGenerated("PostUsersResponse400", packages.models + ".paths.users.post.response") {
             assertObject {
                 // allOf
                 assertUser()
@@ -142,10 +146,13 @@ class AnalyzerTest {
     fun `path response with object and no props`() = runTest {
         val op = api.paths["/orders"]!!.get
         val response = op.responses["400"]!!
-        analyzer.processPathResponse(op, response, "/orders", statusCode = "400")
-        assertFails {
-            // No props, so not generated.
-            assertGenerated("GetOrdersResponse400", packages.models + ".paths.orders.get.response400") {}
+        analyzer.processPathResponse(op, response, "/orders", statusCode = 400, wrapPrimitives = true)
+        assertGenerated("GetOrdersResponse400", packages.models + ".paths.orders.get.response") {
+            // No props, so it's going to be a JsonObject.
+            // But to use it in client we need it to be a class so wrapper will be made.
+            assertPrimitiveWrapper {
+                assertType(Type.SimpleType(JsonObject::class.asTypeName()))
+            }
         }
     }
 
@@ -157,6 +164,7 @@ class AnalyzerTest {
             assertObject {
                 assertUser()
                 assertProp("orders") {
+
                     assertArray {
                         assertObject {
                             assertProp("id", Int::class.type())
@@ -181,9 +189,9 @@ class AnalyzerTest {
         val issueEventSchema = api.schemas["issue-event-for-issue"]!!
         analyzer.processComponent("UserOrAdmin", userSchema)
         analyzer.processComponent("issue-event-for-issue", issueEventSchema)
-        analyzer.processPathResponse(op, response, "/users", "204", verb = "post")
+        analyzer.processPathResponse(op, response, "/users", 204, verb = "post")
 //        typeStore.printTypes()
-        assertGenerated("PostUsersResponse204", packages.models + ".paths.users.post.response204") {}
+        assertGenerated("PostUsersResponse204", packages.models + ".paths.users.post.response") {}
         assertContains(typeStore.getTypes(), "#/components/schemas/issue-event-for-issue")
     }
 
@@ -218,12 +226,66 @@ class AnalyzerTest {
         }
     }
 
+    @Test
+    fun `response schema with ref`() = runTest {
+        val op = api.paths["/users"]!!.get
+        val response = op.responses["205"]!!
+        analyzer.processPathResponse(op, response, "/users", 205, verb = "get", wrapPrimitives = true)
+        /*assertCanResolve("#/paths/users/get/responses/205") {
+            assertReferenceToSchema("")
+        }*/
+        assertGenerated("GetUsersResponse205", packages.models + ".paths.users.get.response") {
+            assertPrimitiveWrapper {
+                assertReferenceToSchema("User")
+            }
+        }
+    }
+
+    @Test
+    fun `response mapping`() = runTest {
+        val op = api.paths["/orders"]!!.get
+        val response = op.responses["400"]!!
+        analyzer.processPathResponse(op, response, "/orders", 400, verb = "get", wrapPrimitives = true)
+        val mapping = typeStore.getResponseMapping(TypeStore.PathId("/orders", "get"))
+        assertNotEquals(0, mapping.size)
+        assertIs<Type.WithTypeName.PrimitiveWrapper>(mapping[400]?.type)
+
+    }
+
+    @Test
+    fun `no wrapping`() = runTest {
+        val op = api.paths["/orders"]!!.get
+        val response = op.responses["405"]!!
+        analyzer.processPathResponse(op, response, "/orders", 405, verb = "get", wrapPrimitives = false).join()
+        assertCanResolve("#/paths//orders//get/responses/405") {
+            assertArray {
+                assertReferenceToSchema("OrderList")
+            }
+        }
+    }
+
+    @Test
+    fun `with wrapping`() = runTest {
+        val op = api.paths["/orders"]!!.get
+        val response = op.responses["405"]!!
+        analyzer.processPathResponse(op, response, "/orders", 405, verb = "get", wrapPrimitives = true).join()
+        assertGenerated("GetOrdersResponse405", pkg = packages.models + ".paths.orders.get.response") {
+            assertPrimitiveWrapper {
+                assertArray {
+                    assertReferenceToSchema("OrderList")
+                }
+            }
+        }
+    }
+
     private fun assertGenerated(
         name: String,
         pkg: String = packages.models,
         block: TypeAssertScope.() -> Unit
     ): Type {
-        val type = typeStore.getTypes().values.find { it.simpleName() == name && it.packageName() == pkg } ?: fail("Component $name not found in package $pkg")
+        val type = typeStore.getTypes().values.find { it.simpleName() == name && it.packageName() == pkg } ?: run {
+            fail("Component $name not found in package $pkg\n${typeStore.printableSummary()}")
+        }
         TypeAssertScope(type).block()
         return type
     }
@@ -237,8 +299,17 @@ class AnalyzerTest {
         return type
     }
 
+    private fun assertCanResolve(
+        reference: String,
+        block: (TypeAssertScope).() -> Unit
+    ): Type {
+        val type = typeStore.getTypes()[reference] ?: fail("No reference registered $reference")
+        TypeAssertScope(type).block()
+        return type
+    }
 
-    private fun KClass<*>.type(nullable: Boolean = false): Type.WithTypeName.SimpleType {
+
+    private fun KClass<*>.type(nullable: Boolean = false): Type.SimpleType {
         return this.asClassName().simpleType(nullable)
     }
 

@@ -14,9 +14,15 @@ object Cli {
         val outputDir by parser.option(ArgType.String, shortName = "o", description = "Output directory").default("build/generated")
         parser.parse(args)
 
-        val fileSpecs = EntryPoint(openapiFile).run()
+        val basePath = File(outputDir).resolve("src/main/kotlin")
+        val (fileSpecs, templates) = EntryPoint(openapiFile).run()
         fileSpecs.forEach {
-            it.writeTo(File(outputDir).resolve("src/main/kotlin"))
+            it.writeTo(basePath)
+        }
+        templates.forEach {
+            val path = basePath.resolve(it.packageName.split(".").joinToString("/"))
+                .resolve(it.name + ".kt")
+            path.writeText(it.contents)
         }
     }
 }

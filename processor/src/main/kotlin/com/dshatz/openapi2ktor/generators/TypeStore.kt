@@ -1,31 +1,65 @@
 package com.dshatz.openapi2ktor.generators
 
-import com.dshatz.openapi2ktor.utils.packageName
-import com.dshatz.openapi2ktor.utils.simpleName
-import com.dshatz.openapi2ktor.utils.stripFilePathFromRef
-import com.reprezen.kaizen.oasparser.model3.Schema
+import com.dshatz.openapi2ktor.utils.*
+import com.squareup.kotlinpoet.ClassName
+import com.squareup.kotlinpoet.TypeName
 import java.util.concurrent.ConcurrentHashMap
 
 class TypeStore {
 
     // Schema string representation to model class name.
-    private val types: ConcurrentHashMap<String, Type.WithTypeName> = ConcurrentHashMap()
-    fun getTypes(): Map<String, Type.WithTypeName> = types.toMap()
+    private val types: ConcurrentHashMap<String, Type> = ConcurrentHashMap()
+    fun getTypes(): Map<String, Type> = types.toMap()
 
+    private val responseMapping: MutableMap<PathId, MutableMap<Int, ResponseTypeInfo>> = mutableMapOf()
 
-    fun registerType(jsonReference: String, type: Type.WithTypeName) {
-        println("Registering type! ${type.typeName}; $jsonReference")
-        types[jsonReference] = type
+    private val responseInterfaces: MutableMap<PathId, Pair<ClassName?, ClassName?>> = mutableMapOf()
+
+    fun registerType(jsonReference: String, type: Type) {
+//        if (type is Type.Reference) error("!!! reference for type $jsonReference")
+        println("Registering type! ${type.simpleName()}; ${jsonReference.stripFilePathFromRef()}")
+        types[jsonReference.stripFilePathFromRef()] = type
     }
 
-    fun registerComponentSchema(referenceId: String, type: Type.WithTypeName) {
+    fun registerComponentSchema(referenceId: String, type: Type) {
+        if (type is Type.Reference) error("Should not be a reference for component schema $referenceId")
         println("Registering component schema! $referenceId")
-        types[referenceId] = type
+        types[referenceId.stripFilePathFromRef()] = type
     }
 
-    fun getClassName(schema: Schema): Type.WithTypeName? {
-        return types[schema.toString()]
+    fun registerResponseMapping(path: PathId, status: Int, jsonReference: String, type: Type) = synchronized(responseMapping) {
+        val map = responseMapping.getOrDefault(path, mutableMapOf()).also {
+            it[status] = ResponseTypeInfo(type, jsonReference.stripFilePathFromRef())
+        }
+        responseMapping[path] = map
     }
+
+    data class PathId(val pathString: String, val verb: String) {
+        val pathId = verb.capitalize() + pathString.split("/").joinToString("") { it.capitalize() }
+    }
+
+    fun resolveReference(jsonReference: String): Type {
+        println("Resolving $jsonReference...")
+        return getTypes()[jsonReference] ?: run {
+            printTypes()
+            error("Could not resolve reference $jsonReference")
+        }
+    }
+
+    data class ResponseTypeInfo(val type: Type, val jsonReference: String)
+
+    fun registerResponseInterface(path: PathId, successInterface: ClassName?, errorInterface: ClassName?) {
+        responseInterfaces[path] = successInterface to errorInterface
+    }
+
+    fun getResponseErrorInterface(path: PathId) = responseInterfaces[path]?.second
+    fun getResponseSuccessInterface(path: PathId) = responseInterfaces[path]?.first
+
+    fun getResponseMapping(response: PathId): Map<Int, ResponseTypeInfo> = synchronized(responseMapping) {
+        return responseMapping[response]!!
+    }
+
+    fun getAllResponseTypes() = responseMapping.keys
 
     private fun printType(type: Type, parentObject: Type.WithTypeName.Object? = null, propName: String? = null, depth: Int = 0): String? {
 
@@ -43,8 +77,8 @@ class TypeStore {
                     sb.appendLine(printType(it.value, parentObject = type, propName = it.key, depth = 3))
                 }
             }
-            is Type.WithTypeName.SimpleType -> {
-                sb.append(("type: " + type.simpleName() + ("?".takeIf { type.typeName.isNullable } ?: "")).addSpaces(1))
+            is Type.SimpleType -> {
+                sb.append(("type: " + type.kotlinTypeName() + ("?".takeIf { type.kotlinType.isNullable } ?: "")).addSpaces(1))
                 if (parentObject != null && propName != null) {
                     sb.appendLine()
                     sb.appendLine("required: ${propName in parentObject.requiredProps}".addSpaces(1))
@@ -67,6 +101,10 @@ class TypeStore {
                     sb.appendLine("-$it".addSpaces(2))
                 }
             }
+            is Type.WithTypeName.PrimitiveWrapper -> {
+                sb.appendLine("${type.simpleName()} (${type.packageName()})")
+                sb.appendLine("Wrapper of ${type.wrappedType}")
+            }
             else -> {}
         }
         return sb.toString().addSpaces(depth)
@@ -79,18 +117,26 @@ class TypeStore {
         if (printAll) {
             println()
             println("Printing TypeStore contents...")
-            println(types.entries.joinToString("\n") { "${it.key.stripFilePathFromRef()} -> ${it.value.simpleName()}" })
+            println(types.entries.joinToString("\n") { "${it.key.stripFilePathFromRef()} -> ${it.value}" })
         }
         if (printComponents) {
             println()
             println("Printing TypeStore components...")
-            print(types.filterKeys { it.startsWith("#") }.entries.joinToString("\n") { "${it.key} -> ${it.value.simpleName()}" })
+            print(types.filterKeys { it.startsWith("#") }.entries.joinToString("\n") { "${it.key} -> ${it.value}" })
         }
         if (printStructured) {
             types.forEach {
                 println(printType(it.value))
             }
         }
+    }
+
+    fun printableSummary(): String {
+        val sb = StringBuilder()
+        types.forEach {
+            sb.append(printType(it.value))
+        }
+        return sb.toString()
     }
 
 }

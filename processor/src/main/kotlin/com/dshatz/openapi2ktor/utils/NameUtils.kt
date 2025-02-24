@@ -1,6 +1,7 @@
 package com.dshatz.openapi2ktor.utils
 
 import com.dshatz.openapi2ktor.generators.Type
+import com.dshatz.openapi2ktor.generators.TypeStore
 import com.reprezen.jsonoverlay.Overlay
 import com.reprezen.kaizen.oasparser.model3.Schema
 import com.squareup.kotlinpoet.ClassName
@@ -8,9 +9,16 @@ import com.squareup.kotlinpoet.CodeBlock
 import com.squareup.kotlinpoet.ParameterizedTypeName
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import java.util.*
+import kotlin.math.min
 
-fun makeResponseModelName(verb: String, path: String, response: String, includeStatus: Boolean): String {
-    return makeCamelCase(verb, path.safeName(), "Response", response.takeIf { includeStatus })
+
+fun makeResponseModelName(verb: String, path: String, statusCode: Int, includeStatus: Boolean): String {
+    return makeCamelCase(verb, path.safeName(), "Response", statusCode.takeIf { includeStatus }?.toString())
+}
+
+fun makeResponseModelName(pathId: TypeStore.PathId, statusCode: Int, includeStatus: Boolean): String {
+    return makeResponseModelName(pathId.verb, pathId.pathString, statusCode, includeStatus)
 }
 
 fun makeRequestBodyModelName(verb: String, path: String): String {
@@ -61,7 +69,7 @@ fun Schema.modelPackageName(packages: Packages): String {
 
 val Schema.jsonReference: String get() = Overlay.of(this).jsonReference
 
-internal fun makePackageName(jsonReference: String, basePackage: String): String {
+fun makePackageName(jsonReference: String, basePackage: String): String {
     try {
 
         val parts = jsonReference
@@ -81,7 +89,7 @@ internal fun makePackageName(jsonReference: String, basePackage: String): String
                 val responsesIndex = parts.indexOf("responses")
                 val statusIndex = responsesIndex + 1
                 val path = parts.subList(0, responsesIndex)
-                val responseSegment = "response" + parts[statusIndex]
+                val responseSegment = "response" /*+ parts[statusIndex]*/
                 val remaining = parts.subList(responsesIndex, parts.size).dropWhile { it != "schema" }.drop(1)
                 buildList {
                     addAll(path)
@@ -97,7 +105,8 @@ internal fun makePackageName(jsonReference: String, basePackage: String): String
                     addAll(parts.subList(schemaIndex + 1, parts.size))
                 }
             } else {
-                error("Unknown type of path $jsonReference")
+                // Some other /paths reference
+                parts
             }
         } else if (isSchemas) {
             parts
@@ -117,6 +126,8 @@ internal fun makePackageName(jsonReference: String, basePackage: String): String
         error("Failed to generate package name for $jsonReference")
     }
 }
+
+fun Int.isSuccessCode(): Boolean = this in 200..299
 
 private fun String.safePathSegment(): String {
     return if (startsWith("{") && endsWith("}")) {
@@ -143,6 +154,10 @@ fun Schema.isPropAReference(prop: String): Boolean {
     return Overlay.of(this).toJson().get("properties")?.get(prop)?.get("\$ref") != null
 }
 
+fun TypeStore.PathId.makeRequestFunName(): String {
+    return "$verb${pathString.split("/").joinToString("") {it.capitalize()}}"
+}
+
 fun String.safePropName(): String {
     val parts = split(".", "_", "-")
         .run {
@@ -163,10 +178,23 @@ fun Type.WithTypeName.simpleName(): String {
     return (typeName as? ClassName)?.simpleName ?: (typeName as? ParameterizedTypeName).toString()
 }
 
+fun Type.SimpleType.kotlinTypeName(): String = (this.kotlinType as ClassName).simpleName
+
 fun Type.WithTypeName.packageName(): String {
     return (typeName as? ClassName)?.packageName ?: (typeName as? ParameterizedTypeName).toString()
 }
 
 fun String.stripFilePathFromRef(): String {
     return "#" + substringAfter("#")
+}
+
+fun longestCommonPrefix(paths: List<String>): String {
+    val pathSegments = paths.map { it.split("/").filter { it.isNotBlank() } }
+    val prefix = 1..pathSegments.maxOf { it.size }
+    val results = prefix.associateWith { takePathSegments ->
+        val numberOfLeafs = pathSegments.count { it.size == takePathSegments }
+        numberOfLeafs
+    }
+    println(results)
+    return ""
 }
