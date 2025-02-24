@@ -10,6 +10,7 @@ val input = "${project.projectDir}/src/test/resources/sample.yaml"
 
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
+    implementation(libs.bundles.ktor)
     implementation("com.google.devtools.ksp:symbol-processing-api:2.1.10-1.0.30")
     kspTest(project(":processor"))
     testImplementation(kotlin("test"))

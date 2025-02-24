@@ -16,7 +16,7 @@ annotation class TypeScopeMarker
 @DslMarker
 annotation class ObjectScopeMarker
 
-fun KClass<*>.type(nullable: Boolean = false): Type.WithTypeName.SimpleType {
+fun KClass<*>.type(nullable: Boolean = false): Type.SimpleType {
     return this.asClassName().simpleType(nullable)
 }
 
@@ -32,8 +32,14 @@ internal data class TypeAssertScope(val currentType: Type) {
         return currentType
     }
 
+    fun assertPrimitiveWrapper(block: TypeAssertScope.() -> Unit): Type.WithTypeName.PrimitiveWrapper {
+        assertIs<Type.WithTypeName.PrimitiveWrapper>(currentType)
+        TypeAssertScope(currentType.wrappedType).block()
+        return currentType
+    }
+
     fun assertReferenceToSchema(schemaName: String) {
-        assertIs<Type.Reference>(currentType)
+        assertIs<Type.Reference>(currentType, message = "Actual type $currentType")
         assertEquals("#/components/schemas/$schemaName", currentType.jsonReference)
     }
 

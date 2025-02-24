@@ -2,6 +2,7 @@ package com.dshatz.openapi2ktor.generators
 
 import com.dshatz.openapi2ktor.generators.Type.Companion.simpleType
 import com.dshatz.openapi2ktor.generators.models.KotlinxCodeGenerator
+import com.dshatz.openapi2ktor.utils.Packages
 import com.squareup.kotlinpoet.CodeBlock
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
 import kotlin.test.BeforeTest
@@ -13,11 +14,11 @@ class KotlinxCodeGeneratorTest {
     private lateinit var generator: KotlinxCodeGenerator
     @BeforeTest
     fun init() {
-        generator = KotlinxCodeGenerator(TypeStore())
+        generator = KotlinxCodeGenerator(TypeStore(), Packages("com.example"))
     }
 
     @Test
-    fun `default value for string`() {
+    fun `default values`() {
         with (generator) {
             assertEquals(CodeBlock.of("%S", ""), String::class.type().defaultValue(""))
             assertEquals(

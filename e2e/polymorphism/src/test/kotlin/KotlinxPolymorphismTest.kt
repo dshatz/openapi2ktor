@@ -1,11 +1,12 @@
 import com.example.models.components.schemas.AdminUser.AdminUser
 import com.example.models.components.schemas.User.User
-import com.example.models.paths.orders.get.response200.GetOrdersResponse
-import com.example.models.paths.orders.get.response403.GetOrdersResponse403
-import com.example.models.paths.users.get.response200.GetUsersResponse200
-import com.example.models.paths.users.get.response201.GetUsersResponse201
-import com.example.models.paths.users.post.response200.PostUsersResponse200
-import com.example.models.paths.users.post.response400.PostUsersResponse400
+import com.example.models.paths.orders.get.response.GetOrdersResponse400
+import com.example.models.paths.orders.get.response.GetOrdersResponse403
+import com.example.models.paths.orders.get.response.items.GetOrdersResponseItem
+import com.example.models.paths.users.get.response.GetUsersResponse200
+import com.example.models.paths.users.get.response.GetUsersResponse201
+import com.example.models.paths.users.post.response.PostUsersResponse200
+import com.example.models.paths.users.post.response.PostUsersResponse400
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.MissingFieldException
 import kotlinx.serialization.json.*
@@ -35,9 +36,9 @@ class KotlinxPolymorphismTest {
             ]
         """.trimIndent()
         val response = Json.decodeFromString<GetUsersResponse200>(json)
-        assertEquals(2, response.size)
-        assertIs<User>(response.first())
-        assertIs<AdminUser>(response.last())
+        assertEquals(2, response.get().size)
+        assertIs<User>(response.get().first())
+        assertIs<AdminUser>(response.get().last())
     }
 
     @Test
@@ -58,9 +59,9 @@ class KotlinxPolymorphismTest {
             ]
         """.trimIndent()
         val response = Json.decodeFromString<GetUsersResponse201>(json)
-        assertEquals(2, response.size)
-        assertIs<User>(response.first())
-        assertIs<AdminUser>(response.last())
+        assertEquals(2, response.get().size)
+        assertIs<User>(response.get().first())
+        assertIs<AdminUser>(response.get().last())
     }
 
     @Test
@@ -86,11 +87,11 @@ class KotlinxPolymorphismTest {
                 "amount": "2"
               }]
         """.trimIndent()
-        val response = Json.decodeFromString<GetOrdersResponse>(json)
+        val response = Json.decodeFromString<List<GetOrdersResponseItem>>(json)
         assertEquals(0, response.first().id)
     }
 
-    /*@Test
+@Test
     fun `schema with no properties`() {
         val json = """
             {
@@ -99,8 +100,9 @@ class KotlinxPolymorphismTest {
             }
         """.trimIndent()
         val response = Json.decodeFromString<GetOrdersResponse400>(json)
-        assertEquals(11, response["a"]?.jsonPrimitive?.int)
-    }*/
+        assertEquals(11, response.get()["a"]?.jsonPrimitive?.int)
+    }
+
 
     @Test
     fun `missing contentMediaType and schema`() {
@@ -109,7 +111,8 @@ class KotlinxPolymorphismTest {
                 "a": 2
             }
         """.trimIndent()
-        assertIs<JsonObject>(Json.decodeFromString<GetOrdersResponse403>(json))
+        val d = Json.decodeFromString<GetOrdersResponse403>(json)
+        assertIs<JsonObject>(d.get())
     }
 
     @OptIn(ExperimentalSerializationApi::class)

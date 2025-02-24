@@ -114,6 +114,21 @@ class NameUtilsTest {
         )
     }
 
+    @Test
+    fun `longest path prefix`() {
+        val paths = listOf(
+            "/orders/",
+            "/users",
+            "/users/accounts/emails/ff",
+            "/users/accounts/emails/ffgg",
+            "/users/accounts/messages/a",
+            "/users/accounts/messages/g",
+            "/users/logs",
+            "/orders/payments"
+        )
+        println(longestCommonPrefix(paths))
+    }
+
     private fun Response.defaultSchema(): Schema = contentMediaTypes.values.first().schema!!
 
 }
