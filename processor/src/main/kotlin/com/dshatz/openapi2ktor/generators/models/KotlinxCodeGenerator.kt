@@ -12,7 +12,7 @@ import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.*
 import java.io.Serial
 
-class KotlinxCodeGenerator(private val typeStore: TypeStore, private val packages: Packages): IModelGenerator {
+class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packages: Packages): IModelGenerator {
 
     private lateinit var responseMappings: ResponseInterfaceResult
 
@@ -55,11 +55,11 @@ class KotlinxCodeGenerator(private val typeStore: TypeStore, private val package
                 }
 
             if (!interfacesForOneOf.isNullOrEmpty()) {
-                typeSpecBuilder.addSuperinterfaces(interfacesForOneOf.map { it.typeName })
+                typeSpecBuilder.addSuperinterfaces(interfacesForOneOf.map { it.typeName.copy(nullable = false) })
             }
 
             responseMappings.responseSuperclasses[type]?.let {
-                typeSpecBuilder.addSuperinterface(it)
+                typeSpecBuilder.addSuperinterface(it.copy(nullable = false))
             }
 
             val constructorBuilder = FunSpec.constructorBuilder()
@@ -125,7 +125,7 @@ class KotlinxCodeGenerator(private val typeStore: TypeStore, private val package
 
     private fun generatePrimitiveResponseWrappers(types: Collection<TypeStore.ResponseTypeInfo>, superInterface: TypeName): Map<Type, FileSpec> {
         val wrappers = types.associateWithNotNull { (type, jsonReference) ->
-            val wrapper = (typeStore.getTypes()[jsonReference] as? Type.WithTypeName.PrimitiveWrapper)
+            val wrapper = type as? Type.WithTypeName.PrimitiveWrapper
             wrapper
         }.mapKeys { it.key.type }
         return wrappers.mapValues { (type, wrapper) ->
@@ -133,7 +133,7 @@ class KotlinxCodeGenerator(private val typeStore: TypeStore, private val package
             val fileSpec = FileSpec.builder(className)
             val wrappedType = wrapper.wrappedType.makeTypeName()
 
-            val serializerClassname = ClassName(className.packageName, className.simpleName + "Serializer")
+            val serializerClassname = ClassName(className.packakgeName, className.simpleName + "Serializer")
 
             val typeSpec = TypeSpec.classBuilder(className)
                 .addSuperinterface(ClassName(packages.client, "Wrapper").parameterizedBy(wrappedType))
@@ -263,13 +263,13 @@ class KotlinxCodeGenerator(private val typeStore: TypeStore, private val package
             .map {
                 val classname = it.typeName as ClassName
                 val enumSpec = TypeSpec.enumBuilder(classname)
-                it.elements.forEach {
+                it.elements.forEach { (value, entryName) ->
                     enumSpec.addEnumConstant(
-                        it.toString().safePropName(),
+                        entryName,
                         TypeSpec.anonymousClassBuilder()
                             .addAnnotation(
                                 AnnotationSpec.builder(SerialName::class)
-                                    .addMember("%S", it.toString()).build()
+                                    .addMember("%S", value.toString()).build()
                             ).build()
                     )
                 }
@@ -282,58 +282,27 @@ class KotlinxCodeGenerator(private val typeStore: TypeStore, private val package
     private fun Type.WithTypeName.Object.makeDataClassProps(typeStore: TypeStore, name: String, type: Type): DataClassProp {
         val isRequired = name in requiredProps
         val defaultValue = defaultValues[name].run {
-            if (type is Type.WithTypeName.Enum<*> && this is String) "${(type.typeName as ClassName).simpleName}.${safePropName()}"
+            if (type is Type.WithTypeName.Enum<*> && this is String) {
+                if (this != "null") {
+                    "${(type.typeName as ClassName).simpleName}.${type.elements[this]}"
+                } else {
+                    "null"
+                }
+            }
             else this
         }
 
         val actualType = if (type is Type.Reference) typeStore.resolveReference(type.jsonReference) else type
         val isNullable = actualType.makeTypeName().isNullable
 
-        val finalType =
-            if (isRequired) {
-                actualType.makeTypeName()
-            } else {
-                if (!isNullable && defaultValue == null) {
-                    actualType.makeTypeName().copy(nullable = true)
-                } else actualType.makeTypeName()
-            }
+        val finalType = actualType.addNullabilityIfOptional(isRequired)
 
-        val default = if (!isRequired) {
-            if (defaultValue != null) {
-                // Optional and non-null default is provided. Set that default.
-                actualType.defaultValue(defaultValue)
-            } else {
-                // Optional and no default value provided, or default of null.
-                CodeBlock.of("null")
-            }
-        } else defaultValue?.let { actualType.defaultValue(it) }
+        val default = actualType.makeDefaultValueCodeBlock(isRequired, defaultValue)
 
         val prop = PropertySpec.builder(name, finalType).initializer(name)
         val param = ParameterSpec.builder(name, finalType).defaultValue(default)
 
         return DataClassProp(prop.build(), param.build(), name)
-    }
-
-    internal fun Type.defaultValue(default: Any): CodeBlock {
-        return when (this.makeTypeName().copy(nullable = false)) {
-            String::class.asTypeName() -> CodeBlock.of("%S", default)
-            Type.WithTypeName.Enum::class.asTypeName() -> CodeBlock.of("enumval")
-            JsonPrimitive::class.asTypeName() -> default.makeDefaultPrimitive()!!.makeCodeBlock()
-            List::class.asTypeName().parameterizedBy(String::class.asTypeName()) -> {
-                (default as? List<String>)?.let {
-                    CodeBlock.of(
-                        "listOf(" + it.joinToString(", ") { "%S" } + ")",
-                        args = it.toTypedArray()
-                    )
-                } ?: (default as List<*>).let {
-                        CodeBlock.of(
-                            "listOf(" + it.joinToString(", ") { "%L" } + ")",
-                            args = it.toTypedArray()
-                        )
-                    }
-            }
-            else -> CodeBlock.of("%L", default)
-        }
     }
 
     private fun interfaceMappingForOneOf(typeStore: TypeStore): Map<Type, List<Type.WithTypeName.OneOf>> {
@@ -350,12 +319,13 @@ class KotlinxCodeGenerator(private val typeStore: TypeStore, private val package
     }
 
     private fun customPolymorphicSerializer(superType: Type.WithTypeName.OneOf): Pair<ClassName, TypeSpec> {
-        val superClassName = (superType.typeName as ClassName)
+        val superClassName = (superType.typeName.copy(nullable = false) as ClassName)
         val serializerName = ClassName(
             packageName = superClassName.packageName,
             superClassName.simpleName + "PolymorphicSerializer"
         )
 
+        val anyNullable = superType.childrenMapping.entries.any { it.key.makeTypeName().isNullable }
         val chooseSerializerCode = CodeBlock.builder()
             .beginControlFlow("return when (element.%M[%S]?.%M?.content)",
                 MemberName("kotlinx.serialization.json", "jsonObject"),
@@ -363,7 +333,7 @@ class KotlinxCodeGenerator(private val typeStore: TypeStore, private val package
                 MemberName("kotlinx.serialization.json", "jsonPrimitive"))
             .run {
                 superType.childrenMapping.entries.fold(this) { codeBlockBuilder, (subType, discriminatorValue) ->
-                    codeBlockBuilder.addStatement("%S -> %T.serializer()", discriminatorValue, subType.makeTypeName())
+                    codeBlockBuilder.addStatement("%S -> %T.serializer()", discriminatorValue, subType.makeTypeName().copy(nullable = false))
                 }
             }
             .addStatement("else -> error(%S)", "Unknown discriminator value!")
@@ -383,54 +353,4 @@ class KotlinxCodeGenerator(private val typeStore: TypeStore, private val package
             .addFunction(function)
             .build()
     }
-
-    private fun <T: Type> T.makeTypeName(): TypeName {
-        return when (this) {
-            is Type.WithTypeName -> typeName as ClassName
-            is Type.Reference -> typeStore.resolveReference(jsonReference).makeTypeName()
-            is Type.List -> List::class.asTypeName().parameterizedBy(itemsType.makeTypeName())
-            is Type.SimpleType -> this.kotlinType
-            else -> { error("What type is this? $this") }
-        }
-    }
-
-    /*private fun generateOptionalType(): FileSpec {
-        val className = ClassName("com.dshatz.openapi2ktor.support", "Opt")
-        val fileSpec = FileSpec.builder(className)
-        val typeParam = TypeVariableName("T")
-        val typeSpec = TypeSpec.classBuilder("Opt")
-            .addTypeVariable(typeParam)
-            .addType(
-                TypeSpec.classBuilder("None")
-                    .addTypeVariable(typeParam)
-                    .superclass(className.parameterizedBy(typeParam))
-                    .build()
-            )
-            .addType(
-                TypeSpec.classBuilder("Data")
-                    .addTypeVariable(typeParam)
-                    .superclass(className.parameterizedBy(typeParam))
-                    .addModifiers(KModifier.DATA)
-                    .addProperty(PropertySpec.builder("data", typeParam).initializer("data").build())
-                    .primaryConstructor(FunSpec.constructorBuilder().addParameter(
-                        ParameterSpec.builder("data", typeParam).build()
-                    ).build())
-                    .build()
-            )
-            .addFunction(
-                FunSpec.builder("hasData")
-                    .returns(Boolean::class.asTypeName())
-                    .addCode(CodeBlock.of("return this is Data"))
-                    .build()
-            )
-            .addFunction(
-                FunSpec.builder("getOrNull")
-                    .returns(typeParam.copy(nullable = true))
-                    .addCode(CodeBlock.of("return (this as? Data)?.data"))
-                    .build()
-            )
-            .addModifiers(KModifier.SEALED)
-
-        return fileSpec.addType(typeSpec.build()).build()
-    }*/
 }

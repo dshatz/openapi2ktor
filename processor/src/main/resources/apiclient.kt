@@ -1,6 +1,9 @@
 package {{ client }}
 
 import io.ktor.client.*
+import io.ktor.client.request.*
+import io.ktor.http.*
+import io.ktor.util.*
 import io.ktor.client.engine.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.serialization.kotlinx.json.*
@@ -40,4 +43,17 @@ sealed class HttpResult<D, E> {
 interface Wrapper<T> {
     abstract val d: T
     fun get(): T = d
+}
+
+fun <T> HttpRequestBuilder.addOptionalParam(name: String, value: T?, isNullable: Boolean) {
+    if (value != null || isNullable) parameter(name, value)
+}
+
+fun <T> HttpRequestBuilder.addRequiredParam(name: String, value: T?) {
+    parameter(name, value)
+}
+
+fun String.replacePathParams(name: String, value: Any?, nullable: Boolean): String {
+    return if (value == null && !nullable) this
+    else this.replace("{${name}}", value.toString().encodeURLPathPart())
 }

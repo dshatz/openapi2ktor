@@ -9,6 +9,7 @@ import com.reprezen.kaizen.oasparser.model3.Schema
 import com.squareup.kotlinpoet.*
 import com.dshatz.openapi2ktor.generators.Type.Companion.simpleType
 import com.dshatz.openapi2ktor.generators.TypeStore
+import com.dshatz.openapi2ktor.generators.TypeStore.OperationParam.ParamLocation
 import com.dshatz.openapi2ktor.generators.clients.IClientGenerator
 import com.dshatz.openapi2ktor.utils.*
 import com.reprezen.jsonoverlay.Overlay
@@ -43,7 +44,9 @@ open class OpenApiAnalyzer(
 
         println("Models: $modelsTime")
         println("Paths: $pathTime")
-        typeStore.printTypes()
+
+        typeStore.disambiguateTypeNames()
+
         val clientTemplates = clientGenerator.generateTemplates()
         val fileSpecs = modelGenerator.generate() + clientGenerator.generate(api)
         return@runBlocking fileSpecs to clientTemplates
@@ -53,6 +56,23 @@ open class OpenApiAnalyzer(
         schemas.map { (schemaName, schema) ->
             launch { processComponent(schemaName, schema) }
         }
+        processResponseComponents(responses)
+    }
+
+    internal suspend fun processResponseComponents(responses: Map<String, Response>) = withContext(coroutineContext) {
+        return@withContext responses.map { (schemaName, response) ->
+            launch {
+                response.contentMediaTypes.values.firstOrNull()?.schema.run {
+                    makeType(
+                        schemaName.safePropName().capitalize(),
+                        Overlay.of(response).jsonReference,
+                        true,
+                        response.getResponseComponentRefInfo(),
+                        false
+                    )
+                }
+            }
+        }
     }
 
     internal suspend fun processComponent(schemaName: String, schema: Schema) {
@@ -60,40 +80,70 @@ open class OpenApiAnalyzer(
             schemaName.safePropName().capitalize(),
             schema.jsonReference,
             components = true,
-            isReference = false,
+            referenceData = null,
             wrapPrimitives = false
         )
     }
 
     private suspend fun OpenApi3.gatherPathModels(): List<Job> {
-        return gatherPathResponseModels() + gatherPathRequestBodyModels()
+        return gatherPathResponseModels() + gatherPathRequestBodyModels() + calculateOperationParameters()
     }
 
-    internal suspend fun OpenApi3.gatherPathResponseModels() = withContext(coroutineContext) {
-        return@withContext paths.flatMap { (pathString, path) ->
-            path.operations.flatMap { (verb, operation) ->
-                val multipleSuccess = operation.responses.count { it.key.toInt().isSuccessCode() } > 1
-                val multipleErrors = operation.responses.count { !it.key.toInt().isSuccessCode() } > 1
-
-                val packageName = makePackageName(Overlay.of(operation.responses.values.first()).jsonReference, packages.models)
-                val pathId = TypeStore.PathId(pathString, verb)
-                val iResponseClass = ClassName(packageName, "I${pathId.pathId}Response")
-                val iErrorClass = ClassName(packageName, "I${pathId.pathId}Error")
-                typeStore.registerResponseInterface(
-                    path = pathId,
-                    successInterface = iResponseClass.takeIf { multipleSuccess },
-                    errorInterface = iErrorClass.takeIf { multipleErrors }
-                )
-
-                operation.responses.map { (statusCode, response) ->
-                    val wrapPrimitives = if (statusCode.toInt().isSuccessCode()) multipleSuccess else multipleErrors
-                    processPathResponse(operation, response, pathString, statusCode.toInt(), verb, wrapPrimitives)
-                }
+    private suspend fun OpenApi3.calculateOperationParameters() = withContext(coroutineContext) {
+        mapPaths { pathID, operation ->
+            launch {
+                calculateParameters(pathID, operation)
             }
         }
     }
 
-    open internal suspend fun processPathResponse(
+    internal suspend fun calculateParameters(pathID: TypeStore.PathId, operation: Operation) {
+        val params = operation.parameters.map { param ->
+            param.schema.makeType(
+                param.jsonReference.split("/").last().safePropName(),
+                param.jsonReference,
+                false,
+                operation.isParameterAReference(param.name),
+                false
+            ).let { paramType ->
+                val where = when (param.`in`) {
+                    "query" -> ParamLocation.QUERY
+                    "path" -> ParamLocation.PATH
+                    else -> error("What is this param location? ${param.`in`}")
+                }
+                TypeStore.OperationParam(param.name, paramType, param.isRequired, where)
+            }
+        }
+        typeStore.registerOperationParams(pathID, params)
+    }
+
+    internal suspend fun processPath(pathId: TypeStore.PathId, operation: Operation): List<Job> {
+        val multipleSuccess = operation.responses.count { it.key.toInt().isSuccessCode() } > 1
+        val multipleErrors = operation.responses.count { !it.key.toInt().isSuccessCode() } > 1
+
+        return if (operation.responses.isNotEmpty()) {
+            val packageName = makePackageName(Overlay.of(operation.responses).jsonReference, packages.models)
+            val iResponseClass = ClassName(packageName, "I${makeResponseModelName(pathId, 0, false)}")
+            val iErrorClass = ClassName(packageName, "I${makeResponseModelName(pathId, 0, false)}Error")
+            typeStore.registerResponseInterface(
+                path = pathId,
+                successInterface = iResponseClass.takeIf { multipleSuccess },
+                errorInterface = iErrorClass.takeIf { multipleErrors }
+            )
+            operation.responses.map { (statusCode, response) ->
+                val wrapPrimitives = if (statusCode.toInt().isSuccessCode()) multipleSuccess else multipleErrors
+                processPathResponse(operation, response, pathId.pathString, statusCode.toInt(), pathId.verb, wrapPrimitives)
+            }
+        } else emptyList()
+    }
+
+    internal suspend fun OpenApi3.gatherPathResponseModels() = withContext(coroutineContext) {
+        return@withContext mapPaths { pathId, operation ->
+            processPath(pathId, operation)
+        }.flatten()
+    }
+
+    internal open suspend fun processPathResponse(
         operation: Operation,
         response: Response,
         pathString: String,
@@ -102,6 +152,7 @@ open class OpenApiAnalyzer(
         wrapPrimitives: Boolean = false
     ) = withContext(coroutineContext) {
         val mediaType = response.contentMediaTypes.values.firstOrNull()
+
         val schema = mediaType?.schema
         val modelName = makeResponseModelName(
             verb = verb,
@@ -109,12 +160,12 @@ open class OpenApiAnalyzer(
             statusCode = statusCode,
             includeStatus = !statusCode.isSuccessCode() || operation.hasMultipleSuccessfulResponseCodes()
         )
-        val jsonReference = Overlay.of(response).jsonReference
+        val ref = operation.getReferenceForResponse(statusCode)
+        val refData = operation.isResponseAReference(statusCode)
+        val jsonReference = Overlay.of(operation.responses).jsonReference + "/$statusCode"
         launch {
-            val isReference = Overlay.of(response.contentMediaTypes.values.firstOrNull()).isReference("schema")
-
-            schema.makeType(modelName, jsonReference, isReference = isReference, wrapPrimitives = wrapPrimitives).also {
-                typeStore.registerResponseMapping(TypeStore.PathId(pathString, verb), statusCode, Overlay.of(response).jsonReference, it)
+            schema.makeType(modelName, jsonReference, referenceData = refData, wrapPrimitives = wrapPrimitives).also {
+                typeStore.registerResponseMapping(TypeStore.PathId(pathString, verb), statusCode, ref?.target ?: jsonReference, it)
             }
         }
     }
@@ -125,7 +176,7 @@ open class OpenApiAnalyzer(
                 val schema = operation.requestBody.contentMediaTypes.values.first().schema
                 val modelName = makeRequestBodyModelName(verb, pathString)
                 launch {
-                    schema.makeType(modelName, schema.jsonReference, isReference = false, wrapPrimitives = false)
+                    schema.makeType(modelName, schema.jsonReference, referenceData = null, wrapPrimitives = false)
                 }
             }
         }
@@ -138,7 +189,7 @@ open class OpenApiAnalyzer(
                 val type = schema.makeType(
                     nameForObject = name,
                     jsonReference = schema.jsonReference,
-                    isReference = isPropAReference(name),
+                    referenceData = propRefData(name),
                     components = components,
                     wrapPrimitives = false
                 )
@@ -157,10 +208,10 @@ open class OpenApiAnalyzer(
         nameForObject: String,
         jsonReference: String,
         components: Boolean = false,
-        isReference: Boolean,
+        referenceData: ReferenceMetadata?,
         wrapPrimitives: Boolean
     ): Type {
-        println("Entering ${"component".takeIf { components } ?: ""} ${jsonReference.stripFilePathFromRef()}")
+        println("Entering ${"component".takeIf { components } ?: ""} ${jsonReference.cleanJsonReference()}")
 
         val packageName = makePackageName(jsonReference, packages.models)
 
@@ -180,7 +231,8 @@ open class OpenApiAnalyzer(
             }
             else {
                 // TODO: Check why this check is needed. It shouldn't be!
-                if (jsonReference.stripFilePathFromRef() != (typeToRegister as? Type.Reference)?.jsonReference) {
+                // Check if added reference is not pointing to itself.
+                if (jsonReference.cleanJsonReference() != (typeToRegister as? Type.Reference)?.jsonReference) {
                     typeStore.registerType(jsonReference, typeToRegister)
                 }
             }
@@ -191,19 +243,19 @@ open class OpenApiAnalyzer(
             typeToRegister
         }
 
-        val schemaType = if (isReference) null else this?.type
+        val schemaType = if (referenceData.isReference) null else this?.type
 
         if (this != null) {
             return when (schemaType) {
                 "array" -> {
                     Type.List(
-                        if (isArrayItemAReference()) {
+                        if (arrayItemRefData().isReference) {
                             Type.Reference(itemsSchema.getComponentRef()!!)
                         } else {
                             itemsSchema.makeType(
                                 nameForObject + "Item",
                                 itemsSchema.jsonReference,
-                                isReference = isArrayItemAReference(),
+                                referenceData = arrayItemRefData(),
                                 components = components,
                                 wrapPrimitives = false
                             )
@@ -224,26 +276,31 @@ open class OpenApiAnalyzer(
                         val enumValues = enums
                         val canBeNull = isNullable && null in enumValues
                         Type.WithTypeName.Enum(
-                            ClassName(
+                            typeName = ClassName(
                                 packageName,
                                 nameForObject.capitalize()
-                            ).copy(nullable = canBeNull), enumValues.filterNotNull().map { it.toString() }).register()
+                            ).copy(nullable = canBeNull),
+                            elements = enums.filterNotNull().associateWith { it.toString().safeEnumEntryName() })
+                            .register()
                     } else {
                         String::class.asClassName().simpleType(isNullable).register()
                     }
                 }
                 "boolean" -> Boolean::class.asClassName().simpleType(isNullable).register()
-                "number" -> Double::class.asClassName().simpleType(isNullable).register()
-                "integer" -> Int::class.asClassName().simpleType(isNullable).register()
+                "number" -> {
+                    if (format == "double") Double::class.asClassName().simpleType(isNullable).register()
+                    else Float::class.asClassName().simpleType(isNullable).register()
+                }
+                "integer" -> {
+                    if (this.format == "int64") Long::class.asClassName().simpleType(isNullable).register()
+                    else Int::class.asClassName().simpleType(isNullable).register()
+                }
                 "object" -> makeObject(nameForObject, components).register()
                 null -> {
-                    // *Of or component definition
-                    if (isReference) {
+                    if (referenceData != null) {
                         // Reference to something
-                        val packageName = makePackageName(getComponentRef()!!, packages.models)
-//                        println("Reference found! ${getComponentRef()} $packageName")
                         Type.Reference(
-                            jsonReference = getComponentRef()!!
+                            jsonReference = referenceData.target
                         ).register()
                     } else if (hasOneOfSchemas()) {
                         // oneOf
@@ -254,21 +311,27 @@ open class OpenApiAnalyzer(
                             // TODO: Make a sealed class with Int(), String(), etc subclasses.
                             JsonElement::class.asClassName().simpleType(isNullable).register()
                         } else {
-                            Type.WithTypeName.OneOf(
-                                typeName = ClassName(packageName, if (components) nameForObject else "I$nameForObject"),
-                                childrenMapping = oneOfSchemas.mapIndexed { index, it ->
-                                    val isReference = Overlay.of(oneOfSchemas).isReference(index)
-                                    val discriminatorValue = discriminator
-                                        .mappings.entries
-                                        .find { pair -> pair.value == it.getComponentRef() }?.key
+                            val childrenMapping = oneOfSchemas.mapIndexed { index, it ->
+                                val isReference = oneOfRefData(index)
+                                val discriminatorValue = discriminator
+                                    .mappings.entries
+                                    .find { pair -> pair.value == it.getComponentRef() }?.key
 
-                                    it.makeType(
-                                        nameForObject,
-                                        it.jsonReference,
-                                        isReference = isReference,
-                                        wrapPrimitives = false
-                                    ) to (discriminatorValue ?: it.name)
-                                }.toMap(),
+                                it.makeType(
+                                    nameForObject,
+                                    it.jsonReference,
+                                    referenceData = isReference,
+                                    wrapPrimitives = false
+                                ) to (discriminatorValue ?: it.name)
+                            }.toMap()
+
+                            val isNullable = oneOfSchemas.any {
+                                it.isNullable
+                            }
+
+                            Type.WithTypeName.OneOf(
+                                typeName = ClassName(packageName, if (components) nameForObject else "I$nameForObject").copy(nullable = isNullable),
+                                childrenMapping = childrenMapping,
                                 discriminator = discriminator.propertyName
                             ).register()
                         }
@@ -287,7 +350,7 @@ open class OpenApiAnalyzer(
                         JsonElement::class.asClassName().simpleType(isNullable).register()
                     } else {
                         // It is either a component definition or a reference!
-                        if (isReference) {
+                        if (referenceData.isReference) {
                             error("Reference in the wrong place!")
                         } else if (components) {
                             // Component definition
@@ -327,7 +390,7 @@ open class OpenApiAnalyzer(
         val props = makeProps(components).awaitProps()
         return if (props.isNotEmpty()) {
             Type.WithTypeName.Object(
-                ClassName(modelPackageName(packages), nameForObject.capitalize()),
+                ClassName(modelPackageName(packages), nameForObject.capitalize()).copy(nullable = nullable ?: false),
                 props = props,
                 requiredProps = this.requiredFields,
                 defaultValues = properties.mapValues { it.value.default }

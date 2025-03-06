@@ -18,9 +18,25 @@ class OrdersApiClient(
     private val apiClient: BaseClient
 ) {
 
-    suspend fun getOrders(): HttpResult<IResponse, IErrorResponse> {
+    /**
+     * @param limit - required (query)
+     * @param optionalParam - optional but not originally nullable (query)
+     *
+     */
+    suspend fun getOrders(limit: Int, optionalParam: Int? = null): HttpResult<IResponse, IErrorResponse> {
+        val pathParams = mapOf(
+            "a" to 1
+        )
         try {
-            val response = apiClient.httpClient.get("/orders")
+            val response = apiClient.httpClient.get("/orders") {
+                url {
+                    encodedPathSegments = encodedPathSegments.map {
+                        pathParams[it]?.toString() ?: it
+                    }
+                }
+//                this.addRequiredParam("limit", limit)
+//                this.addOptionalParam("optional_param", optionalParam, false)
+            }
             val result: IResponse = when (response.status.value) {
                 200 -> response.body<Response200>()
                 201 -> response.body<Response201>()
@@ -38,7 +54,7 @@ class OrdersApiClient(
     }
 
     private suspend fun test() {
-        val response = getOrders()
+        val response = getOrders(10)
         when (response) {
             is HttpResult.Ok -> {
                 when (response.data) {

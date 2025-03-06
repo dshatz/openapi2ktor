@@ -11,6 +11,28 @@ servers:
     description: Optional server description, e.g. Internal staging server for testing
 
 components:
+  parameters:
+    UserTypeParam:
+      name: user_type
+      in: query
+      required: true
+      schema:
+        type: string
+        enum:
+          - normal
+          - admin
+    per:
+      name: per
+      description: The time frame to display results for.
+      in: query
+      required: false
+      schema:
+        type: string
+        enum:
+          - ''
+          - day
+          - week
+        default: day
   schemas:
     User:
       nullable: true
@@ -80,6 +102,19 @@ components:
         - "$ref": "#/components/schemas/OrderList"
         - "$ref": "#/components/schemas/AdminUser"
         - "$ref": "#/components/schemas/UserOrAdmin"
+    basic-error:
+      title: Basic Error
+      description: Basic Error
+      type: object
+      properties:
+        message:
+          type: string
+        documentation_url:
+          type: string
+        url:
+          type: string
+        status:
+          type: string
     UserList:
       type: array
       items:
@@ -99,6 +134,27 @@ components:
         - local_only
         - selected
         - null
+  responses:
+    bad_request:
+      description: Bad Request
+      content:
+        application/json:
+          schema:
+            "$ref": "#/components/schemas/basic-error"
+        application/scim+json:
+          schema:
+            "$ref": "#/components/schemas/scim-error"
+    error_response:
+      description: Generic error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              code:
+                type: integer
+              message:
+                type: string
 
 
 paths:
@@ -106,6 +162,9 @@ paths:
     get:
       summary: Return a list of orders
       description: Orders list
+      parameters:
+        user_type:
+          "$ref": "#/components/parameters/UserTypeParam"
       responses:
         "200":
           description: List of orders
@@ -137,15 +196,64 @@ paths:
                 items:
                   "$ref": '#/components/schemas/OrderList'
 
+  /users/{name}:
+    get:
+      summary: Find user by name
+      parameters:
+        - name: name
+          in: path
+          schema:
+            type: string
+      responses:
+        '400':
+          "$ref": "#/components/responses/bad_request"
+        '401':
+          "$ref": "#/components/schemas/basic-error"
+        '403':
+          "$ref": "#/components/responses/error_response"
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserOrAdmin"
+  /users/by-id/{id}:
+    get:
+      summary: Find user by id
+      parameters:
+        - name: id
+          in: path
+          schema:
+            type: integer
+      responses:
+        '400':
+          "$ref": "#/components/responses/bad_request"
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserOrAdmin"
   /users:
     get:
       summary: Returns a list of users.
       description: Optional extended description in CommonMark or HTML.
       parameters:
         - name: limit
+          required: true
           in: query
           schema:
             type: integer
+        - name: min_age
+          required: false
+          in: query
+          schema:
+            type: integer
+            default: 18
+        - name: config
+          in: query
+          schema:
+            "$ref": '#/components/schemas/webhook-config-url'
+        - name: per
+          "$ref": "#/components/parameters/per"
       responses:
         "200": # status code
           description: A JSON array of user names

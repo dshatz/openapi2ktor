@@ -21,9 +21,15 @@ class NameUtilsTest {
         val jsonReference = "file:/sample.yaml#/paths//orders//get/responses/200/content/application/json/schema/items"
 
         assertEquals(
-            "com.example.models.paths.orders.get.responses.items",
+            "com.example.models.paths.orders.get.response.items",
             makePackageName(jsonReference, "com.example.models")
         )
+    }
+
+    @Test
+    fun `package name for response component`() {
+        val jsonReference = "file:/sample.yaml#/components/responses/bad-request"
+        assertEquals("com.example.models.components.responses.badRequest", makePackageName(jsonReference, "com.example.models"))
     }
 
     @Test
@@ -45,7 +51,7 @@ class NameUtilsTest {
          *                 items: {}
          */
         val orderList = api.schemas["OrderList"]!!
-        assertFalse(orderList.isArrayItemAReference())
+        assertFalse(orderList.arrayItemRefData().isReference)
 
         /**
          *         "405":
@@ -58,16 +64,16 @@ class NameUtilsTest {
          *                   "$ref": '#/components/schemas/OrderList'
          */
         val getOrders405Response = api.paths["/orders"]!!.get.responses["405"]!!.defaultSchema()
-        assertTrue(getOrders405Response.isArrayItemAReference())
+        assertEquals("#/components/schemas/OrderList", getOrders405Response.arrayItemRefData()?.target)
     }
 
     @Test
     fun `is property a reference`() {
         val notAReference = api.schemas["User"]!!
-        assertFalse(notAReference.isPropAReference("id"))
+        assertFalse(notAReference.propRefData("id").isReference)
 
         val isAReference = api.paths["/users"]!!.post.responses["204"]!!.defaultSchema()
-        assertTrue(isAReference.isPropAReference("existing"))
+        assertEquals("#/components/schemas/UserOrAdmin", isAReference.propRefData("existing")?.target)
     }
 
     @Test
@@ -81,7 +87,7 @@ class NameUtilsTest {
         val base = "com.example.models"
         val jsonReference = "file:/github.yaml#/components/paths//projects/columns/{column_id}/moves//post/responses/201/content/application/json/schema"
         val packageName = makePackageName(jsonReference, base)
-        assertEquals("com.example.models.components.paths.projects.columns._columnId_.moves.post.response201", packageName)
+        assertEquals("com.example.models.components.paths.projects.columns.byColumnId.moves.post.response", packageName)
 
 
         val ref3 = "file:/github.yaml#/components/responses/actions_runner_labels_readonly/content/application/json/schema/properties/labels"
@@ -102,31 +108,23 @@ class NameUtilsTest {
 
         val refLong = "file:/spot_api.yaml#/paths//sapi/v1/margin/allOrderList//get/responses/200/content/application/json/schema/items/properties/orders/items"
         assertEquals(
-            "$base.paths.sapi.v1.margin.allOrderList.get.response200.items.properties.orders.items",
+            "$base.paths.sapi.v1.margin.allOrderList.get.response.items.properties.orders.items",
             makePackageName(refLong, base)
         )
 
         val refRequest = "file:/github.yaml#/paths//applications/{client_id}/token/scoped//post/requestBody/content/application/json/schema"
         assertEquals(
-            "$base.paths.applications._clientId_.token.scoped.post.requestBody",
+            "$base.paths.applications.byClientId.token.scoped.post.requestBody",
             makePackageName(refRequest, base)
 
         )
     }
 
     @Test
-    fun `longest path prefix`() {
-        val paths = listOf(
-            "/orders/",
-            "/users",
-            "/users/accounts/emails/ff",
-            "/users/accounts/emails/ffgg",
-            "/users/accounts/messages/a",
-            "/users/accounts/messages/g",
-            "/users/logs",
-            "/orders/payments"
-        )
-        println(longestCommonPrefix(paths))
+    fun `parameter package name`() {
+        val ref = "file:/sample.yaml#/components/parameters/user_type"
+        val packageName = makePackageName(ref, "com.example.models")
+        assertEquals("com.example.models.components.parameters", packageName)
     }
 
     private fun Response.defaultSchema(): Schema = contentMediaTypes.values.first().schema!!

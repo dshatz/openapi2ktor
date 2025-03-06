@@ -1,31 +1,31 @@
 package com.dshatz.openapi2ktor.generators.analyze
 
+import com.dshatz.openapi2ktor.BaseTestClass
 import com.dshatz.openapi2ktor.generators.ObjectAssertScope
 import com.dshatz.openapi2ktor.generators.Type
 import com.dshatz.openapi2ktor.generators.Type.Companion.simpleType
 import com.dshatz.openapi2ktor.generators.TypeAssertScope
 import com.dshatz.openapi2ktor.generators.TypeStore
+import com.dshatz.openapi2ktor.generators.TypeStore.PathId
 import com.dshatz.openapi2ktor.utils.*
-import com.reprezen.kaizen.oasparser.OpenApiParser
-import com.reprezen.kaizen.oasparser.model3.OpenApi3
+import com.reprezen.kaizen.oasparser.model3.Operation
+import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.asClassName
 import com.squareup.kotlinpoet.asTypeName
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import java.io.File
 import kotlin.reflect.KClass
 import kotlin.test.*
 
-class AnalyzerTest {
+class AnalyzerTest: BaseTestClass() {
 
-    private lateinit var api: OpenApi3
     private lateinit var typeStore: TypeStore
     private lateinit var analyzer: OpenApiAnalyzer
     private val packages = Packages("com.example")
     @BeforeTest
-    fun init() {
-        api = OpenApiParser().parse(File("../e2e/polymorphism/src/test/resources/sample.yaml")) as OpenApi3
+    override fun init() {
+        super.init()
         typeStore = TypeStore()
         analyzer = OpenApiAnalyzer(typeStore, packages)
     }
@@ -80,10 +80,10 @@ class AnalyzerTest {
         schema.jsonReference.assertComponentSchemaGenerated("UserOrAdmin") {
             assertOneOf {
                 assertOneOfType("User") {
-                    assertReferenceToSchema("User")
+                    assertReferenceToComponent("User")
                 }
                 assertOneOfType("AdminUser") {
-                    assertReferenceToSchema("AdminUser")
+                    assertReferenceToComponent("AdminUser")
                 }
                 assertDiscriminatorKey("user_type")
             }
@@ -107,10 +107,10 @@ class AnalyzerTest {
                 assertArray {
                     assertOneOf {
                         assertOneOfType("normal") {
-                            assertReferenceToSchema("User")
+                            assertReferenceToComponent("User")
                         }
                         assertOneOfType("admin") {
-                            assertReferenceToSchema("AdminUser")
+                            assertReferenceToComponent("AdminUser")
                         }
                     }
                 }
@@ -129,14 +129,14 @@ class AnalyzerTest {
                 assertUser()
                 assertProp("error", String::class.type())
                 assertProp("path") {
-                    assertEnum("/", "/", "/docs")
+                    assertEnum("/" to "SLASH", "/docs" to "SLASHDOCS")
                     assertNullable()
                 }
                 assertProp("allowed_actions") {
-                    assertReferenceToSchema("allowed-actions")
+                    assertReferenceToComponent("allowed-actions")
                 }
                 assertProp("webhook-url") {
-                    assertReferenceToSchema("webhook-config-url")
+                    assertReferenceToComponent("webhook-config-url")
                 }
             }
         }
@@ -207,7 +207,7 @@ class AnalyzerTest {
                             assertProp("id", Int::class.type())
                             assertProp("amount", Int::class.type())
                             assertProp("config") {
-                                assertReferenceToSchema("webhook-config-insecure-ssl")
+                                assertReferenceToComponent("webhook-config-insecure-ssl")
                             }
                             assertProp("params") {
                                 assertArray {
@@ -231,12 +231,43 @@ class AnalyzerTest {
         val op = api.paths["/users"]!!.get
         val response = op.responses["205"]!!
         analyzer.processPathResponse(op, response, "/users", 205, verb = "get", wrapPrimitives = true)
-        /*assertCanResolve("#/paths/users/get/responses/205") {
-            assertReferenceToSchema("")
-        }*/
         assertGenerated("GetUsersResponse205", packages.models + ".paths.users.get.response") {
             assertPrimitiveWrapper {
-                assertReferenceToSchema("User")
+                assertReferenceToComponent("User")
+            }
+        }
+    }
+
+    @Test
+    fun `wrapped reference in response schema`() = runTest {
+        val op = api.paths["/users/{name}"]!!.get
+        val response = op.responses["403"]!!
+        processComponent("basic-error")
+        analyzer.processPathResponse(op, response, "/users/{name}", statusCode = 403, wrapPrimitives = true)
+        analyzer.processPathResponse(op, response, "/users/{name}", statusCode = 400, wrapPrimitives = true)
+        analyzer.processPathResponse(op, response, "/users/{name}", statusCode = 401, wrapPrimitives = true)
+        analyzer.processResponseComponents(api.responses)
+        assertGenerated("GetUsersByNameResponse403", packages.models + ".paths.users.byName.get.response") {
+            assertPrimitiveWrapper {
+                assertReferenceToComponent("error_response", type = "responses", typeStore = typeStore) {
+                    assertObject {  }
+                }
+            }
+        }
+        assertGenerated("GetUsersByNameResponse400", packages.models + ".paths.users.byName.get.response") {
+            assertPrimitiveWrapper {
+                assertReferenceToResponse("bad_request", typeStore) {
+                    assertReferenceToSchema("basic-error", typeStore) {
+                        assertObject {  }
+                    }
+                }
+            }
+        }
+        assertGenerated("GetUsersByNameResponse401", packages.models + ".paths.users.byName.get.response") {
+            assertPrimitiveWrapper {
+                assertReferenceToSchema("basic-error", typeStore) {
+                    assertObject {  }
+                }
             }
         }
     }
@@ -246,7 +277,7 @@ class AnalyzerTest {
         val op = api.paths["/orders"]!!.get
         val response = op.responses["400"]!!
         analyzer.processPathResponse(op, response, "/orders", 400, verb = "get", wrapPrimitives = true)
-        val mapping = typeStore.getResponseMapping(TypeStore.PathId("/orders", "get"))
+        val mapping = typeStore.getResponseMapping(PathId("/orders", "get"))
         assertNotEquals(0, mapping.size)
         assertIs<Type.WithTypeName.PrimitiveWrapper>(mapping[400]?.type)
 
@@ -257,9 +288,9 @@ class AnalyzerTest {
         val op = api.paths["/orders"]!!.get
         val response = op.responses["405"]!!
         analyzer.processPathResponse(op, response, "/orders", 405, verb = "get", wrapPrimitives = false).join()
-        assertCanResolve("#/paths//orders//get/responses/405") {
+        assertCanResolve("#/paths/orders/get/responses/405") {
             assertArray {
-                assertReferenceToSchema("OrderList")
+                assertReferenceToComponent("OrderList")
             }
         }
     }
@@ -272,10 +303,119 @@ class AnalyzerTest {
         assertGenerated("GetOrdersResponse405", pkg = packages.models + ".paths.orders.get.response") {
             assertPrimitiveWrapper {
                 assertArray {
-                    assertReferenceToSchema("OrderList")
+                    assertReferenceToComponent("OrderList")
                 }
             }
         }
+    }
+
+    @Test
+    fun `parameter calculation`() = runTest {
+        val op = api.paths["/users"]!!.get
+        val pathId = PathId("/users", "get")
+        analyzer.processComponent("webhook-config-url", api.schemas["webhook-config-url"]!!)
+        analyzer.calculateParameters(pathId, op)
+        assertCanResolve("#/paths/users/get/parameters/0") {
+            assertType(Int::class.type())
+        }
+        assertCanResolve("#/paths/users/get/parameters/1") {
+            assertType(Int::class.type())
+        }
+        assertCanResolve("#/paths/users/get/parameters/2") {
+            assertReferenceToComponent("webhook-config-url")
+        }
+
+        pathId.assertParameterRegistered("limit") {
+            assertType(Int::class.type())
+        }.also {
+            assertEquals(TypeStore.OperationParam.ParamLocation.QUERY, it.where)
+            assertTrue(it.isRequired)
+        }
+        pathId.assertParameterRegistered("config") {
+            assertReferenceToComponent("webhook-config-url")
+        }.also {
+            assertEquals(TypeStore.OperationParam.ParamLocation.QUERY, it.where)
+            assertFalse(it.isRequired)
+        }
+        pathId.assertParameterRegistered("min_age") {
+            assertType(Int::class.type())
+        }.also {
+            assertEquals(TypeStore.OperationParam.ParamLocation.QUERY, it.where)
+            assertFalse(it.isRequired)
+        }
+    }
+
+    @Test
+    fun `parameter component`() = runTest   {
+        val op = api.paths["/orders"]!!.get
+        val pathId = PathId("/orders", "get")
+        analyzer.calculateParameters(pathId, op)
+        assertGenerated("UserTypeParam", packages.models + ".components.parameters") {}
+    }
+
+    @Test
+    fun `one of with one type nullable should be nullable`() = runTest {
+        processComponent("User")
+        processComponent("AdminUser")
+        processComponent("UserOrAdmin")
+        assertGenerated("UserOrAdmin", packages.models + ".components.schemas.UserOrAdmin") {
+            assertOneOf {
+                assertNullable(true)
+                assertOneOfType("User") {
+                    assertReferenceToComponent("User", typeStore) {
+                        assertNullable(true)
+                    }
+                }
+                assertOneOfType("AdminUser") {
+                    assertReferenceToComponent("AdminUser", typeStore) {
+                        assertNullable(false)
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `enum with an empty '' value`() = runTest {
+        val pathId = PathId("/users", "get")
+        val op = pathId.getOperation()
+        analyzer.calculateParameters(pathId, op)
+        assertGenerated("Per", packages.models + ".components.parameters") {
+            assertEnum("" to "EMPTY", "day" to "DAY", "week" to "WEEK")
+        }
+    }
+
+    @Test
+    fun `multiple responses with one a reference to responses component`() = runTest {
+        val pathId = PathId("/users/{name}", "get")
+        val op = pathId.getOperation()
+        analyzer.processPath(pathId, op)
+        processComponent("basic-error")
+        assertEquals(ClassName("com.example.models.paths.users.byName.get.response", "IGetUsersByNameResponseError"),
+            typeStore.getResponseErrorInterface(pathId))
+        assertGenerated("GetUsersByNameResponse400", packages.models + ".paths.users.byName.get.response") {  }
+    }
+
+    @Test
+    fun `nested reference in single response`() = runTest {
+        val pathId = PathId("/users/by-id/{id}", "get")
+        val op = pathId.getOperation()
+        analyzer.processResponseComponents(api.responses)
+        analyzer.processPath(pathId, op)
+        val response400Type = typeStore.getResponseMapping(pathId)[400]?.type
+        assertIs<Type.Reference>(response400Type)
+        assertCanResolve(response400Type.jsonReference) {
+            assertReferenceToComponent("basic-error")
+        }
+    }
+
+
+    private fun PathId.getOperation(): Operation {
+        return api.paths[pathString]!!.getOperation(verb)
+    }
+
+    private suspend fun processComponent(name: String) {
+        analyzer.processComponent(name, api.schemas[name]!!)
     }
 
     private fun assertGenerated(
@@ -294,7 +434,7 @@ class AnalyzerTest {
         name: String,
         block: (TypeAssertScope).() -> Unit
     ): Type {
-        val type = typeStore.getTypes()[this.stripFilePathFromRef()] ?: fail("No component $name found for jsonReference ${this.stripFilePathFromRef()}")
+        val type = typeStore.getTypes()[this.cleanJsonReference()] ?: fail("No component $name found for jsonReference ${this.cleanJsonReference()}")
         TypeAssertScope(type).block()
         return type
     }
@@ -306,6 +446,15 @@ class AnalyzerTest {
         val type = typeStore.getTypes()[reference] ?: fail("No reference registered $reference")
         TypeAssertScope(type).block()
         return type
+    }
+
+    private fun PathId.assertParameterRegistered(
+        name: String,
+        block: (TypeAssertScope).() -> Unit
+    ): TypeStore.OperationParam {
+        val param = typeStore.getParamsForOperation(this).find { it.name == name } ?: fail("Parameter $name not found in $this.")
+        TypeAssertScope(param.type).block()
+        return param
     }
 
 

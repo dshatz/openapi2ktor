@@ -1,13 +1,9 @@
 package com.dshatz.openapi2ktor.generators
 
 import com.dshatz.openapi2ktor.generators.Type.Companion.simpleType
-import com.dshatz.openapi2ktor.utils.simpleName
 import com.squareup.kotlinpoet.asClassName
 import kotlin.reflect.KClass
-import kotlin.test.assertEquals
-import kotlin.test.assertIs
-import kotlin.test.assertTrue
-import kotlin.test.fail
+import kotlin.test.*
 
 
 @DslMarker
@@ -38,10 +34,24 @@ internal data class TypeAssertScope(val currentType: Type) {
         return currentType
     }
 
-    fun assertReferenceToSchema(schemaName: String) {
+    fun assertReferenceToComponent(schemaName: String, typeStore: TypeStore? = null, type: String = "schemas", block: TypeAssertScope.() -> Unit = {}): String {
         assertIs<Type.Reference>(currentType, message = "Actual type $currentType")
-        assertEquals("#/components/schemas/$schemaName", currentType.jsonReference)
+        assertEquals("#/components/$type/$schemaName", currentType.jsonReference)
+        typeStore?.resolveReference(currentType.jsonReference)?.let {
+            TypeAssertScope(it).block()
+        }
+        return currentType.jsonReference
     }
+
+    fun assertReferenceToSchema(schemaName: String, typeStore: TypeStore? = null, block: TypeAssertScope.() -> Unit = {}) {
+        assertReferenceToComponent(schemaName, typeStore, "schemas", block)
+    }
+
+    fun assertReferenceToResponse(schemaName: String, typeStore: TypeStore? = null, block: TypeAssertScope.() -> Unit) {
+        assertReferenceToComponent(schemaName, typeStore, "responses", block)
+    }
+
+    fun Type.check(block: TypeAssertScope.() -> Unit) = TypeAssertScope(this).block()
 
     fun assertArray(itemTypeScope: TypeAssertScope.() -> Unit) {
         assertIs<Type.List>(currentType, message = "Array should be a SimpleType")
@@ -59,14 +69,21 @@ internal data class TypeAssertScope(val currentType: Type) {
         TypeAssertScope(currentType.aliasTarget).block()
     }
 
-    fun assertEnum(default: String, vararg items: String) {
+    /**
+     * Assert that this is an enum.
+     * @param items pairs of (value, name) where name is to be used as enum entry identifier and value as serialname.
+     */
+    fun assertEnum(vararg items: Pair<String, String>) {
         assertIs<Type.WithTypeName.Enum<String>>(currentType)
-        assertEquals(items.toSet(), currentType.elements.toSet())
+        assertEquals(items.toSet(), currentType.elements.entries.map { it.key to it.value }.toSet())
     }
 
     fun assertNullable(nullable: Boolean = true) {
         if (currentType is Type.WithTypeName) {
-            assertTrue(currentType.typeName.isNullable)
+            if (nullable)
+                assertTrue(currentType.typeName.isNullable, "Expected to be nullable: $currentType")
+            else
+                assertFalse(currentType.typeName.isNullable, "Expected to be non-nullable: $currentType")
         } else {
             fail("Type $currentType does not contain nullability information.")
         }

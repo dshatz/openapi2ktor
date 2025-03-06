@@ -21,7 +21,7 @@ class KspProcessor(
         val (fileSpecs, templates) = EntryPoint(inputFile, logger).run()
         logger.warn(resolver.getAllFiles().toList().toString())
         fileSpecs.forEach {
-            logger.warn("Writing file ${it.name}")
+            logger.warn("Writing file ${it.name} (${it.packageName})")
             codeGenerator.createNewFile(Dependencies(false), it.packageName, it.name).bufferedWriter().use { stream ->
                 it.writeTo(stream)
             }
