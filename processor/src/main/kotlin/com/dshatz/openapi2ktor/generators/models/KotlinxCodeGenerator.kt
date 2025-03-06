@@ -14,7 +14,7 @@ import java.io.Serial
 
 class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packages: Packages): IModelGenerator {
 
-    private lateinit var responseMappings: ResponseInterfaceResult
+    internal lateinit var responseMappings: ResponseInterfaceResult
 
     override fun generate(): List<FileSpec> {
 
@@ -27,7 +27,7 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
         return objectSpecs + superInterfaceSpecs + aliases + enums + responseMappings.files
     }
 
-    private fun generateObjects(): List<FileSpec> {
+    internal fun generateObjects(): List<FileSpec> {
         val typeToSuperInterfaces = interfaceMappingForOneOf(typeStore)
             .mapKeys { it.key.makeTypeName() }
         return typeStore.getTypes().values.filterIsInstance<Type.WithTypeName.Object>().map { type ->
@@ -133,7 +133,7 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
             val fileSpec = FileSpec.builder(className)
             val wrappedType = wrapper.wrappedType.makeTypeName()
 
-            val serializerClassname = ClassName(className.packakgeName, className.simpleName + "Serializer")
+            val serializerClassname = ClassName(className.packageName, className.simpleName + "Serializer")
 
             val typeSpec = TypeSpec.classBuilder(className)
                 .addSuperinterface(ClassName(packages.client, "Wrapper").parameterizedBy(wrappedType))
@@ -241,7 +241,7 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
         )
     }
 
-    private data class ResponseInterfaceResult(val files: List<FileSpec>, val responseSuperclasses: Map<Type, ClassName?>)
+    internal data class ResponseInterfaceResult(val files: List<FileSpec>, val responseSuperclasses: Map<Type, ClassName?>)
 
     private fun generateTypeAliases(typeStore: TypeStore): List<FileSpec> {
         return typeStore.getTypes()
