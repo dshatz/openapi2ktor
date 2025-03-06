@@ -4,17 +4,13 @@ import com.dshatz.openapi2ktor.generators.Type
 import com.dshatz.openapi2ktor.generators.TypeStore
 import com.reprezen.jsonoverlay.Overlay
 import com.reprezen.kaizen.oasparser.model3.Schema
-import com.squareup.kotlinpoet.ClassName
-import com.squareup.kotlinpoet.CodeBlock
-import com.squareup.kotlinpoet.ParameterizedTypeName
+import com.squareup.kotlinpoet.*
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-import java.util.*
-import kotlin.math.min
 
 
 fun makeResponseModelName(verb: String, path: String, statusCode: Int, includeStatus: Boolean): String {
-    return makeCamelCase(verb, path.safeName(), "Response", statusCode.takeIf { includeStatus }?.toString())
+    return makeCamelCase(verb, path.makeResponseModelName(), "Response", statusCode.takeIf { includeStatus }?.toString())
 }
 
 fun makeResponseModelName(pathId: TypeStore.PathId, statusCode: Int, includeStatus: Boolean): String {
@@ -50,13 +46,15 @@ fun Schema.isPartOfComponentSchema(): Boolean {
     return pathElements.first() == "components"
 }
 
+@Deprecated("Please use ReferenceMetadata")
 fun Schema.getComponentRef(): String? {
     return if (isPartOfComponentSchema()) {
         "#/" + Overlay.of(this)
             .jsonReference
             .split("/")
             .dropWhile { !it.contains("#") }
-            .drop(1)
+            .drop(1) // drop empty part
+            .take(3) // take /components/<type>/<name>
             .joinToString("/")
     } else {
         null
@@ -71,20 +69,21 @@ val Schema.jsonReference: String get() = Overlay.of(this).jsonReference
 
 fun makePackageName(jsonReference: String, basePackage: String): String {
     try {
-
         val parts = jsonReference
             .split("/")
             .dropWhile { !it.contains("#") }
             .drop(1)
+            .replaceCurlyWithBy()
             .filterNot { it.isBlank() }
 
 
         val typeIndex = if (parts[0] == "components") 1 else 0
-        val isResponses = parts[typeIndex] == "responses"
-        val isSchemas = parts[typeIndex] == "schemas"
-        val isPaths = parts[typeIndex] == "paths"
+        val isResponseComponent = parts[typeIndex] == "responses"
+        val isSchemaComponent = parts[typeIndex] == "schemas"
+        val isPathsComponent = parts[typeIndex] == "paths"
+        val isParametersComponent = parts[typeIndex] == "parameters"
 
-        val cleanParts = if (isPaths) {
+        val cleanParts = if (isPathsComponent) {
             if ("responses" in parts) {
                 val responsesIndex = parts.indexOf("responses")
                 val statusIndex = responsesIndex + 1
@@ -108,15 +107,17 @@ fun makePackageName(jsonReference: String, basePackage: String): String {
                 // Some other /paths reference
                 parts
             }
-        } else if (isSchemas) {
+        } else if (isSchemaComponent) {
             parts
-        } else if (isResponses) {
+        } else if (isResponseComponent) {
             val schemaIndex = parts.indexOf("schema")
-            val pathInSchema = parts.subList(schemaIndex + 1, parts.size)
+            val pathInSchema = if (schemaIndex != -1) parts.subList(schemaIndex + 1, parts.size) else emptyList()
             buildList {
                 addAll(parts.subList(0, 3)) // responses/<name>
                 addAll(pathInSchema)
             }
+        } else if (isParametersComponent) {
+            parts.subList(0, parts.size - 1)
         } else {
             emptyList()
         }
@@ -146,16 +147,34 @@ fun Any.makeDefaultPrimitive(): JsonPrimitive? {
     }
 }
 
-fun Schema.isArrayItemAReference(): Boolean {
-    return Overlay.of(this).toJson()?.get("items")?.get("\$ref") != null
+fun Schema.arrayItemRefData(): ReferenceMetadata? {
+    return Overlay.of(this).getReference("itemsSchema")?.refString.reference()
+//    return Overlay.of(this).toJson()?.get("items")?.get("\$ref")?.toString().reference()
 }
 
-fun Schema.isPropAReference(prop: String): Boolean {
-    return Overlay.of(this).toJson().get("properties")?.get(prop)?.get("\$ref") != null
+fun Schema.propRefData(prop: String): ReferenceMetadata? {
+    return Overlay.of(this.properties)?.getReference(prop)?.refString.reference()
+//    return Overlay.of(this).toJson().get("properties")?.get(prop)?.get("\$ref")?.toString().reference()
 }
 
-fun TypeStore.PathId.makeRequestFunName(): String {
-    return "$verb${pathString.split("/").joinToString("") {it.capitalize()}}"
+fun Schema.oneOfRefData(index: Int): ReferenceMetadata? {
+    return Overlay.of(oneOfSchemas).getReference(index)?.refString.reference()
+}
+
+fun TypeStore.PathId.makeRequestFunName(dropPrefix: String): String {
+    val endpointName = pathString.split("/").toMutableList()
+        .replaceCurlyWithBy()
+        .joinToString("") {it.capitalize()}
+        .replaceFirst(dropPrefix.capitalize(), "")
+    return "$verb$endpointName"
+}
+
+fun List<String>.replaceCurlyWithBy(): List<String> {
+    return map {
+        if (it.startsWith("{") && it.endsWith("}"))
+            "by" + it.drop(1).dropLast(1).safePropName().capitalize()
+        else it
+    }
 }
 
 fun String.safePropName(): String {
@@ -169,13 +188,17 @@ fun String.safePropName(): String {
     return parts.first() + parts.drop(1).joinToString("") { it.capitalize() }
 }
 
+fun String.makeResponseModelName(): String {
+    return split("/").replaceCurlyWithBy().joinToString("") { it.safePropName().capitalize() }
+}
+
+fun String.safeEnumEntryName(): String {
+    return (safePropName().takeUnless { it.isBlank() } ?: "Empty").uppercase()
+}
+
 fun JsonPrimitive.makeCodeBlock(): CodeBlock {
     val template = if (isString) "%T(%S)" else "%T(%L)"
     return CodeBlock.of(template, JsonPrimitive::class, contentOrNull)
-}
-
-fun Type.WithTypeName.simpleName(): String {
-    return (typeName as? ClassName)?.simpleName ?: (typeName as? ParameterizedTypeName).toString()
 }
 
 fun Type.SimpleType.kotlinTypeName(): String = (this.kotlinType as ClassName).simpleName
@@ -184,17 +207,11 @@ fun Type.WithTypeName.packageName(): String {
     return (typeName as? ClassName)?.packageName ?: (typeName as? ParameterizedTypeName).toString()
 }
 
-fun String.stripFilePathFromRef(): String {
-    return "#" + substringAfter("#")
+fun String.cleanJsonReference(): String {
+    return ("#" + substringAfter("#")).replace("//", "/")
 }
 
-fun longestCommonPrefix(paths: List<String>): String {
-    val pathSegments = paths.map { it.split("/").filter { it.isNotBlank() } }
-    val prefix = 1..pathSegments.maxOf { it.size }
-    val results = prefix.associateWith { takePathSegments ->
-        val numberOfLeafs = pathSegments.count { it.size == takePathSegments }
-        numberOfLeafs
-    }
-    println(results)
-    return ""
+fun TypeName.updateSimpleName(update: (String) -> String): ClassName {
+    val cls = this as ClassName
+    return ClassName(cls.packageName, update(cls.simpleName))
 }

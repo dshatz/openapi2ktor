@@ -2,7 +2,6 @@ package com.dshatz.openapi2ktor.generators
 
 import com.dshatz.openapi2ktor.utils.*
 import com.squareup.kotlinpoet.ClassName
-import com.squareup.kotlinpoet.TypeName
 import java.util.concurrent.ConcurrentHashMap
 
 class TypeStore {
@@ -12,24 +11,23 @@ class TypeStore {
     fun getTypes(): Map<String, Type> = types.toMap()
 
     private val responseMapping: MutableMap<PathId, MutableMap<Int, ResponseTypeInfo>> = mutableMapOf()
-
     private val responseInterfaces: MutableMap<PathId, Pair<ClassName?, ClassName?>> = mutableMapOf()
+    private val operationParameters: MutableMap<PathId, List<OperationParam>> = mutableMapOf()
 
     fun registerType(jsonReference: String, type: Type) {
-//        if (type is Type.Reference) error("!!! reference for type $jsonReference")
-        println("Registering type! ${type.simpleName()}; ${jsonReference.stripFilePathFromRef()}")
-        types[jsonReference.stripFilePathFromRef()] = type
+        println("Registering type! ${type.simpleName()}; ${jsonReference.cleanJsonReference()}")
+        types[jsonReference.cleanJsonReference()] = type
     }
 
     fun registerComponentSchema(referenceId: String, type: Type) {
         if (type is Type.Reference) error("Should not be a reference for component schema $referenceId")
         println("Registering component schema! $referenceId")
-        types[referenceId.stripFilePathFromRef()] = type
+        types[referenceId.cleanJsonReference()] = type
     }
 
     fun registerResponseMapping(path: PathId, status: Int, jsonReference: String, type: Type) = synchronized(responseMapping) {
         val map = responseMapping.getOrDefault(path, mutableMapOf()).also {
-            it[status] = ResponseTypeInfo(type, jsonReference.stripFilePathFromRef())
+            it[status] = ResponseTypeInfo(type, jsonReference.cleanJsonReference())
         }
         responseMapping[path] = map
     }
@@ -46,7 +44,27 @@ class TypeStore {
         }
     }
 
+    fun registerOperationParams(pathId: PathId, params: List<OperationParam>) {
+        operationParameters[pathId] = params
+    }
+
+    fun getParamsForOperation(pathId: PathId): List<OperationParam> {
+        return operationParameters[pathId] ?: emptyList()
+    }
+
     data class ResponseTypeInfo(val type: Type, val jsonReference: String)
+
+    data class OperationParam(
+        val name: String,
+        val type: Type,
+        val isRequired: Boolean,
+        val where: ParamLocation
+    ) {
+        enum class ParamLocation {
+            QUERY,
+            PATH
+        }
+    }
 
     fun registerResponseInterface(path: PathId, successInterface: ClassName?, errorInterface: ClassName?) {
         responseInterfaces[path] = successInterface to errorInterface
@@ -96,7 +114,7 @@ class TypeStore {
                 }
             }
             is Type.WithTypeName.Enum<*> -> {
-                sb.appendLine("Enum".addSpaces(1))
+                sb.appendLine("Enum ${type.simpleName()} (${type.packageName()})".addSpaces(1))
                 type.elements.forEach {
                     sb.appendLine("-$it".addSpaces(2))
                 }
@@ -110,6 +128,21 @@ class TypeStore {
         return sb.toString().addSpaces(depth)
     }
 
+    fun disambiguateTypeNames() {
+        val duplicates = types.entries
+            .asSequence()
+            .filterValuesIsInstance<String, Type, Type.WithTypeName>()
+            .findDuplicates { it.value.typeName }
+        for ((type, duplicatesForType) in duplicates) {
+            println("Found TypeName $type with ${duplicatesForType.size} jsonRefs. Deduplicating...")
+            duplicatesForType.mapIndexed { idx, (jsonRef, currentType) ->
+                jsonRef to currentType.withTypeName(currentType.typeName.updateSimpleName { it + idx })
+            }.forEach {
+                registerType(it.first, it.second)
+            }
+        }
+    }
+
     fun printTypes() {
         val printAll = false
         val printComponents = false
@@ -117,7 +150,7 @@ class TypeStore {
         if (printAll) {
             println()
             println("Printing TypeStore contents...")
-            println(types.entries.joinToString("\n") { "${it.key.stripFilePathFromRef()} -> ${it.value}" })
+            println(types.entries.joinToString("\n") { "${it.key.cleanJsonReference()} -> ${it.value}" })
         }
         if (printComponents) {
             println()

@@ -19,6 +19,8 @@ sealed class Type {
         override fun simpleName(): String = (typeName as ClassName).simpleName
         override fun packageName(): String = (typeName as ClassName).packageName
 
+        abstract fun withTypeName(newTypeName: TypeName): Type.WithTypeName
+
         data class Object(
             override val typeName: TypeName,
             val props: Map<String, Type>,
@@ -28,6 +30,8 @@ sealed class Type {
             override fun toString(): String {
                 return "${simpleName()} - object"
             }
+
+            override fun withTypeName(newTypeName: TypeName): WithTypeName = copy(typeName = newTypeName)
         }
 
         data class PrimitiveWrapper(
@@ -37,6 +41,7 @@ sealed class Type {
             override fun toString(): String {
                 return "PrimitiveWrapper of $wrappedType"
             }
+            override fun withTypeName(newTypeName: TypeName): WithTypeName = copy(typeName = newTypeName)
         }
 
         data class Alias(
@@ -46,21 +51,24 @@ sealed class Type {
             override fun toString(): String {
                 return "${simpleName()} alias -> $aliasTarget"
             }
+            override fun withTypeName(newTypeName: TypeName): WithTypeName = copy(typeName = newTypeName)
         }
 
         data class Enum<T>(
             override val typeName: TypeName,
-            val elements: kotlin.collections.List<T>
+            val elements: kotlin.collections.Map<T, String>,
         ): WithTypeName() {
             override fun toString(): String {
-                return "${simpleName()} enum(${elements.joinToString()})"
+                return "${simpleName()} enum(${elements.entries.joinToString()})"
             }
+            override fun withTypeName(newTypeName: TypeName): WithTypeName = copy(typeName = newTypeName)
         }
 
         data class OneOf(override val typeName: TypeName, val childrenMapping: Map<Type, String>, val discriminator: String): WithTypeName() {
             override fun toString(): String {
                 return "${simpleName()} - one of ${childrenMapping.keys.joinToString()}"
             }
+            override fun withTypeName(newTypeName: TypeName): WithTypeName = copy(typeName = newTypeName)
         }
     }
 

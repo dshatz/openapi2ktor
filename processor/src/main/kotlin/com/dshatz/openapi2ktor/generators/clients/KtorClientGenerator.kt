@@ -2,9 +2,11 @@ package com.dshatz.openapi2ktor.generators.clients
 
 import com.dshatz.openapi2ktor.generators.Type
 import com.dshatz.openapi2ktor.generators.TypeStore
+import com.dshatz.openapi2ktor.generators.TypeStore.OperationParam.ParamLocation
 import com.dshatz.openapi2ktor.utils.*
 import com.reprezen.jsonoverlay.Overlay
 import com.reprezen.kaizen.oasparser.model3.OpenApi3
+import com.reprezen.kaizen.oasparser.model3.Operation
 import com.reprezen.kaizen.oasparser.model3.Path
 import com.reprezen.kaizen.oasparser.model3.Response
 import com.squareup.kotlinpoet.*
@@ -15,9 +17,12 @@ import io.ktor.client.plugins.*
 import kotlinx.serialization.json.JsonObject
 import net.pwall.mustache.Template
 
-class KtorClientGenerator(val typeStore: TypeStore, val packages: Packages): IClientGenerator {
+class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packages): IClientGenerator {
 
     private val baseApiClientType = ClassName(packages.client, "BaseClient")
+    private val addOptionalParamHelper = MemberName(packages.client, "addOptionalParam")
+    private val addRequiredParamHelper = MemberName(packages.client, "addRequiredParam")
+    private val addPathParamHelper = MemberName(packages.client, "replacePathParams")
 
     override fun generate(schema: OpenApi3): List<FileSpec> {
         val serversEnum = generateServersEnum(schema)
@@ -60,10 +65,10 @@ class KtorClientGenerator(val typeStore: TypeStore, val packages: Packages): ICl
 
     private fun generateClientForPackagePrefix(api: OpenApi3, prefix: String, paths: Map<String, Path>): FileSpec {
         val params = listOf(
+            ParameterSpec.builder("client", baseApiClientType).build(),
             ParameterSpec.builder("baseUrl", String::class.asTypeName())
                 .run { if (api.hasServers()) defaultValue("%S", api.servers.first().url) else this }
-                .build(),
-            ParameterSpec.builder("client", baseApiClientType).build()
+                .build()
         )
         val constructor = FunSpec.constructorBuilder().addParameters(params).build()
         val props = params.map { PropertySpec.builder(it.name, it.type, KModifier.PRIVATE).initializer(it.name).build() }
@@ -73,7 +78,7 @@ class KtorClientGenerator(val typeStore: TypeStore, val packages: Packages): ICl
             .primaryConstructor(constructor)
             .addProperties(props)
             .addAnnotation(AnnotationSpec.builder(Suppress::class).addMember("%S", "unused").build())
-            .addFunctions(generateFunctions(api, paths))
+            .addFunctions(generateFunctions(api, paths, prefix))
             .build()
         return FileSpec.builder(prefixClientName)
             .addType(clientType)
@@ -81,7 +86,7 @@ class KtorClientGenerator(val typeStore: TypeStore, val packages: Packages): ICl
     }
 
     private fun Response.resolveReference(): Type {
-        return typeStore.resolveReference(Overlay.of(this).jsonReference.stripFilePathFromRef())
+        return typeStore.resolveReference(Overlay.of(this).jsonReference.cleanJsonReference())
     }
 
     private fun Type.resolveClassName(): TypeName {
@@ -93,13 +98,13 @@ class KtorClientGenerator(val typeStore: TypeStore, val packages: Packages): ICl
         }
     }
 
-    private fun generateFunctions(api: OpenApi3, paths: Map<String, Path>): List<FunSpec> {
+    private fun generateFunctions(api: OpenApi3, paths: Map<String, Path>, prefix: String): List<FunSpec> {
         val funcSpecs: List<FunSpec> = paths.flatMap { (pathString, path) ->
             path.operations.map { (verb, operation) ->
                 val statusToResponseType = operation.responses.mapValues { (statusCode, response) ->
                     val resposneRef = Overlay.of(response).jsonReference
                     val responseModel = typeStore.getResponseMapping(TypeStore.PathId(pathString, verb))[statusCode.toInt()]?.type
-                        ?: typeStore.resolveReference(resposneRef.stripFilePathFromRef())
+                        ?: typeStore.resolveReference(resposneRef.cleanJsonReference())
                     responseModel
                 }
                 val pathID = TypeStore.PathId(pathString, verb)
@@ -120,22 +125,56 @@ class KtorClientGenerator(val typeStore: TypeStore, val packages: Packages): ICl
                     errorResponse?.value?.resolveReference()?.resolveClassName() ?: JsonObject::class.asTypeName()
                 }
 
+                val params = typeStore.getParamsForOperation(pathID)
+                val paramSpecs = params.associateWith {
+                    val finalType = it.type.addNullabilityIfOptional(it.isRequired)
+                    // Default value in parameters are just examples that the server will assume if parameter is not received.
+                    val defaultCode = it.type.makeDefaultValueCodeBlock(it.isRequired, null)
+
+                    ParameterSpec.builder(it.name.safePropName(), finalType)
+                        .defaultValue(defaultCode)
+                        .build()
+                }
+
                 val libResultClass = ClassName(packages.client, "HttpResult")
                 val ktorBodyMethod = MemberName("io.ktor.client.call", "body")
-                val funName = pathID.makeRequestFunName()
+                val funName = pathID.makeRequestFunName(dropPrefix = prefix)
                 val requestFun = FunSpec.builder(funName)
                     .returns(libResultClass.parameterizedBy(successResponseClass, errorResponseClass))
                     .addModifiers(KModifier.SUSPEND)
+                    .addParameters(paramSpecs.values)
                     .addCode(
                         CodeBlock.builder()
                             .beginControlFlow("try")
-                            .addStatement("val response = client.httpClient.%M(%S)", MemberName("io.ktor.client.request", verb), pathString)
+                            .beginControlFlow("val response = client.httpClient.%M(%L)",
+                                MemberName("io.ktor.client.request", verb, isExtension = true),
+                                CodeBlock.of("%S%L", pathString, CodeBlock.builder().apply {
+                                    paramSpecs
+                                        .filter { it.key.where == ParamLocation.PATH }
+                                        .forEach { (param, spec) ->
+                                            add(".%M(%S, %N, %L)", addPathParamHelper, param.name, spec.name, spec.type.isNullable)
+                                        }
+                                }.build()))
+                            .apply {
+                                paramSpecs.filter { it.key.where == ParamLocation.QUERY }.forEach { (paramInfo, paramSpec) ->
+                                    if (paramInfo.isRequired) {
+                                        addStatement("%M(%S, %N)", addRequiredParamHelper, paramInfo.name, paramSpec.name)
+                                    } else {
+                                        addStatement("%M(%S, %N, %L)", addOptionalParamHelper, paramInfo.name, paramSpec.name, paramInfo.type.resolveClassName().isNullable)
+                                    }
+                                }
+                            }
+                            .endControlFlow() // request config
                             .beginControlFlow("val result = when (response.status.value)") // begin when
                             .apply {
                                 statusToResponseType.filterKeys { it.toInt().isSuccessCode() }.forEach { (code, type) ->
                                     addStatement("%L -> response.%M<%T>()", code.toInt(), ktorBodyMethod, type.resolveClassName())
                                 }
-                                addStatement("else -> error(\"Unknown success status code \${response.status.value}.\")")
+                                if (statusToResponseType.isEmpty()) {
+                                    addStatement("else -> response.%M<%T>()", ktorBodyMethod, successResponseClass)
+                                } else {
+                                    addStatement("else -> error(\"Unknown success status code \${response.status.value}.\")")
+                                }
                             }
                             .endControlFlow() // end when
                             .addStatement("return %T.Ok(result, response)", libResultClass)
