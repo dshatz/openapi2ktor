@@ -7,7 +7,6 @@ import com.dshatz.openapi2ktor.kdoc.DocTemplate
 import com.dshatz.openapi2ktor.utils.*
 import com.reprezen.jsonoverlay.Overlay
 import com.reprezen.kaizen.oasparser.model3.OpenApi3
-import com.reprezen.kaizen.oasparser.model3.Operation
 import com.reprezen.kaizen.oasparser.model3.Path
 import com.reprezen.kaizen.oasparser.model3.Response
 import com.squareup.kotlinpoet.*
@@ -15,6 +14,7 @@ import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
 import io.ktor.client.*
 import io.ktor.client.engine.*
 import io.ktor.client.plugins.*
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import net.pwall.mustache.Template
 
@@ -24,9 +24,12 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
     private val addOptionalParamHelper = MemberName(packages.client, "addOptionalParam")
     private val addRequiredParamHelper = MemberName(packages.client, "addRequiredParam")
     private val addPathParamHelper = MemberName(packages.client, "replacePathParams")
+    private lateinit var securitySchemes: Map<String, SecurityScheme>
 
     override fun generate(schema: OpenApi3): List<FileSpec> {
+        processSecurity(schema)
         val serversEnum = generateServersEnum(schema)
+
         val clients = schema.paths.entries.groupBy { it.key.drop(1).substringBefore("/") }
             .mapValues { (firstSegment, paths) ->
                 generateClientForPackagePrefix(schema, firstSegment, paths.associate { it.key to it.value})
@@ -41,6 +44,14 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
 
         val content = template.processToString(mapOf("client" to packages.client))
         return listOf(IClientGenerator.Template(packages.client, baseApiClientType.simpleName, content))
+    }
+
+    private fun processSecurity(schema: OpenApi3) {
+        if (schema.securitySchemes.isNotEmpty()) {
+            securitySchemes = Json {
+                ignoreUnknownKeys = true
+            }.decodeFromString<Map<String, SecurityScheme>>(Overlay.of(schema.securitySchemes).toJson().toString())
+        } else securitySchemes = emptyMap()
     }
 
     private fun generateServersEnum(schema: OpenApi3): FileSpec {
@@ -74,12 +85,31 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
         val constructor = FunSpec.constructorBuilder().addParameters(params).build()
         val props = params.map { PropertySpec.builder(it.name, it.type, KModifier.PRIVATE).initializer(it.name).build() }
 
+        val authSchemesProp = PropertySpec.builder("authSchemes", MUTABLE_MAP.parameterizedBy(String::class.asTypeName(), authSchemeType(packages)), KModifier.PRIVATE)
+            .initializer(
+                CodeBlock.builder()
+                    .beginControlFlow("%M", MemberName("kotlin.collections", "buildMap"))
+                    .apply {
+                        securitySchemes.forEach { (name, scheme) ->
+                            add("put(%S, %T())", name, scheme.generatedContainer(packages))
+                        }
+                    }
+                    .endControlFlow() // end buildMap
+                    .add(".toMutableMap()")
+                    .build()
+            ).build()
+        val authSchemeSetters = securitySchemes.map { (name, scheme) ->
+           scheme.generateSetter(name)
+        }
+
         val prefixClientName = ClassName(packages.client + "." + prefix.safePropName(), "${prefix.capitalize()}Client")
         val clientType = TypeSpec.classBuilder(prefixClientName)
             .primaryConstructor(constructor)
             .addProperties(props)
             .addAnnotation(AnnotationSpec.builder(Suppress::class).addMember("%S", "unused").build())
             .addFunctions(generateFunctions(api, paths, prefix))
+            .addFunctions(authSchemeSetters)
+            .addProperty(authSchemesProp)
             .build()
         return FileSpec.builder(prefixClientName)
             .addType(clientType)
@@ -102,6 +132,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
     private fun generateFunctions(api: OpenApi3, paths: Map<String, Path>, prefix: String): List<FunSpec> {
         val funcSpecs: List<FunSpec> = paths.flatMap { (pathString, path) ->
             path.operations.map { (verb, operation) ->
+                val requiredSecuritySchemes = operation.securityRequirements.flatMap { it.requirements.keys }
                 val statusToResponseType = operation.responses.mapValues { (statusCode, response) ->
                     val resposneRef = Overlay.of(response).jsonReference
                     val responseModel = typeStore.getResponseMapping(TypeStore.PathId(pathString, verb))[statusCode.toInt()]?.type
@@ -154,6 +185,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                             .beginControlFlow("val response = client.httpClient.%M(%L)",
                                 MemberName("io.ktor.client.request", verb, isExtension = true),
                                 CodeBlock.of("%S%L", pathString, CodeBlock.builder().apply {
+                                    // Replace path params in url of client.<verb>(url)
                                     paramSpecs
                                         .filter { it.key.where == ParamLocation.PATH }
                                         .forEach { (param, spec) ->
@@ -161,12 +193,18 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                                         }
                                 }.build()))
                             .apply {
+                                // Add query params
                                 paramSpecs.filter { it.key.where == ParamLocation.QUERY }.forEach { (paramInfo, paramSpec) ->
                                     if (paramInfo.isRequired) {
                                         addStatement("%M(%S, %N)", addRequiredParamHelper, paramInfo.name, paramSpec.name)
                                     } else {
                                         addStatement("%M(%S, %N, %L)", addOptionalParamHelper, paramInfo.name, paramSpec.name, paramInfo.type.resolveClassName().isNullable)
                                     }
+                                }
+                            }.apply {
+                                // Add security
+                                requiredSecuritySchemes.forEach {
+                                    securitySchemes[it]?.generateApplicator(it)?.apply(::add)
                                 }
                             }
                             .endControlFlow() // request config

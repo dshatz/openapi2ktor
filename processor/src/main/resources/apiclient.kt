@@ -10,7 +10,6 @@ import io.ktor.serialization.kotlinx.json.*
 import io.ktor.client.statement.*
 
 class BaseClient(engine: HttpClientEngine, config: HttpClientConfig<*>.() -> Unit = {}) {
-
     internal val httpClient = HttpClient(engine) {
         expectSuccess = true
         install(ContentNegotiation) {
@@ -38,6 +37,13 @@ sealed class HttpResult<D, E> {
             }
         }
     }
+}
+
+
+sealed class AuthScheme {
+    data class WithBearer(var bearer: String? = null): AuthScheme()
+    data class WithBasic(var basicUsername: String? = null, var basicPassword: String? = null): AuthScheme()
+    data class WithApiKey(var apiKey: String? = null): AuthScheme()
 }
 
 interface Wrapper<T> {

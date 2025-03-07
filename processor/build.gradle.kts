@@ -17,6 +17,8 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:3.0.3")
     implementation("io.ktor:ktor-client-content-negotiation:3.0.3")
     implementation("io.ktor:ktor-serialization-kotlinx-json:3.0.3")
+
+
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.0")
     testImplementation(kotlin("test"))
 }

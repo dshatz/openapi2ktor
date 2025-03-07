@@ -13,7 +13,7 @@ dependencies {
     implementation(libs.bundles.ktor)
     implementation("com.google.devtools.ksp:symbol-processing-api:2.1.10-1.0.30")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.0")
-    testImplementation("io.github.denisbronx.netmock:netmock-engine:0.6.0")
+    testImplementation("io.github.denisbronx.netmock:netmock-engine:0.7.0")
     kspTest(project(":processor"))
     testImplementation(kotlin("test"))
 }

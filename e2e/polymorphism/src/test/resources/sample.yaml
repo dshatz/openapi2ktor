@@ -11,6 +11,12 @@ servers:
     description: Optional server description, e.g. Internal staging server for testing
 
 components:
+  securitySchemes:
+    ApiKeyAuth:
+      name: X-MBX-APIKEY
+      in: header
+      description: Binance Public API Key
+      type: apiKey
   parameters:
     UserTypeParam:
       name: user_type
@@ -162,6 +168,8 @@ components:
 paths:
   /orders:
     get:
+      security:
+        - ApiKeyAuth: []
       summary: Return a list of orders
       description: Orders list
       parameters:
