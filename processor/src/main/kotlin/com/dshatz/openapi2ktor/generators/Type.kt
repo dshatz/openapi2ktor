@@ -1,5 +1,6 @@
 package com.dshatz.openapi2ktor.generators
 
+import com.dshatz.openapi2ktor.kdoc.DocTemplate
 import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.TypeName
 
@@ -7,6 +8,7 @@ sealed class Type {
 
     abstract fun simpleName(): String
     open fun packageName(): String = "<no_package>"
+    fun qualifiedName(): String = packageName() + "." + simpleName()
 
     data class SimpleType(val kotlinType: TypeName) : Type() {
         override fun toString(): String = "SimpleType(${(kotlinType as ClassName).simpleName})"
@@ -15,6 +17,7 @@ sealed class Type {
 
     sealed class WithTypeName: Type() {
         abstract val typeName: TypeName
+        abstract val description: DocTemplate?
 
         override fun simpleName(): String = (typeName as ClassName).simpleName
         override fun packageName(): String = (typeName as ClassName).packageName
@@ -23,15 +26,17 @@ sealed class Type {
 
         data class Object(
             override val typeName: TypeName,
-            val props: Map<String, Type>,
+            val props: Map<String, PropInfo>,
             val requiredProps: kotlin.collections.List<String>,
             val defaultValues: Map<String, Any>,
+            override val description: DocTemplate?,
         ) : WithTypeName() {
             override fun toString(): String {
                 return "${simpleName()} - object"
             }
 
             override fun withTypeName(newTypeName: TypeName): WithTypeName = copy(typeName = newTypeName)
+            data class PropInfo(val type: Type, val doc: DocTemplate?)
         }
 
         data class PrimitiveWrapper(
@@ -42,6 +47,11 @@ sealed class Type {
                 return "PrimitiveWrapper of $wrappedType"
             }
             override fun withTypeName(newTypeName: TypeName): WithTypeName = copy(typeName = newTypeName)
+            override val description: DocTemplate? = DocTemplate.Builder()
+                .add("Wrapper of ")
+                .addTypeLink(wrappedType)
+                .addDocFor(wrappedType)
+                .build()
         }
 
         data class Alias(
@@ -51,12 +61,16 @@ sealed class Type {
             override fun toString(): String {
                 return "${simpleName()} alias -> $aliasTarget"
             }
+
+            override val description: DocTemplate? = (aliasTarget as? WithTypeName)?.description
+
             override fun withTypeName(newTypeName: TypeName): WithTypeName = copy(typeName = newTypeName)
         }
 
         data class Enum<T>(
             override val typeName: TypeName,
-            val elements: kotlin.collections.Map<T, String>,
+            val elements: Map<T, String>,
+            override val description: DocTemplate?
         ): WithTypeName() {
             override fun toString(): String {
                 return "${simpleName()} enum(${elements.entries.joinToString()})"
@@ -69,6 +83,12 @@ sealed class Type {
                 return "${simpleName()} - one of ${childrenMapping.keys.joinToString()}"
             }
             override fun withTypeName(newTypeName: TypeName): WithTypeName = copy(typeName = newTypeName)
+            override val description: DocTemplate? = DocTemplate.Builder()
+                .add("OneOf ")
+                .addMany(childrenMapping.keys) { idx, type ->
+                    addTypeLink(type)
+                    if (idx != childrenMapping.keys.indices.last) add(", ")
+                }.build()
         }
     }
 

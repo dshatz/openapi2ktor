@@ -3,6 +3,7 @@ package com.dshatz.openapi2ktor.generators.clients
 import com.dshatz.openapi2ktor.generators.Type
 import com.dshatz.openapi2ktor.generators.TypeStore
 import com.dshatz.openapi2ktor.generators.TypeStore.OperationParam.ParamLocation
+import com.dshatz.openapi2ktor.kdoc.DocTemplate
 import com.dshatz.openapi2ktor.utils.*
 import com.reprezen.jsonoverlay.Overlay
 import com.reprezen.kaizen.oasparser.model3.OpenApi3
@@ -34,7 +35,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
     }
 
     override fun generateTemplates(): List<IClientGenerator.Template> {
-        val template = this.javaClass.classLoader.getResourceAsStream("apiclient.kt").use {
+        val template = this.javaClass.classLoader.getResourceAsStream("apiclient.kt")!!.use {
             Template.parse(it)
         }
 
@@ -136,6 +137,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                         .build()
                 }
 
+                val description = operation.description
                 val libResultClass = ClassName(packages.client, "HttpResult")
                 val ktorBodyMethod = MemberName("io.ktor.client.call", "body")
                 val funName = pathID.makeRequestFunName(dropPrefix = prefix)
@@ -143,6 +145,9 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                     .returns(libResultClass.parameterizedBy(successResponseClass, errorResponseClass))
                     .addModifiers(KModifier.SUSPEND)
                     .addParameters(paramSpecs.values)
+                    .apply {
+                        description?.let { addKdoc(DocTemplate.Builder().add(it).build().toCodeBlock(::findConcreteType)) }
+                    }
                     .addCode(
                         CodeBlock.builder()
                             .beginControlFlow("try")

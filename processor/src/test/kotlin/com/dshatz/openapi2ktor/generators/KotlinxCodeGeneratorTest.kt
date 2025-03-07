@@ -57,7 +57,13 @@ class KotlinxCodeGeneratorTest {
     private fun TypeStore.addObject(name: String, vararg props: Pair<String, Type>): ClassName {
         val cl = makeObjectClassName(name)
         registerType("#/components/schema/$name",
-            Type.WithTypeName.Object(cl, props.toMap(), props.map { it.first }, emptyMap())
+            Type.WithTypeName.Object(
+                cl,
+                props.toMap().mapValues { Type.WithTypeName.Object.PropInfo(it.value, null) },
+                props.map { it.first },
+                emptyMap(),
+                null
+            )
         )
         return cl
     }

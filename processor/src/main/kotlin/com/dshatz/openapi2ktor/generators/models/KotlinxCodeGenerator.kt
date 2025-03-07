@@ -10,7 +10,6 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.*
-import java.io.Serial
 
 class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packages: Packages): IModelGenerator {
 
@@ -71,6 +70,9 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
             typeSpecBuilder
                 .primaryConstructor(constructorBuilder.build())
                 .addModifiers(KModifier.DATA)
+                .apply {
+                    type.description?.let { addKdoc(type.description.toCodeBlock(::findConcreteType)) }
+                }
                 .addAnnotation(Serializable::class)
             fileSpec.addType(typeSpecBuilder.build())
             fileSpec.build()
@@ -106,17 +108,20 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
         val polymorphicSerializers = typeStore.getTypes().values
             .filterIsInstance<Type.WithTypeName.OneOf>()
             .associate { oneOf ->
-                oneOf.typeName to customPolymorphicSerializer(oneOf)
+                oneOf to customPolymorphicSerializer(oneOf)
             }
 
 
         return polymorphicSerializers.map { (superType, serializer) ->
             val serializerClass = serializer.first
             val serializerSpec = serializer.second
-            val className = superType as ClassName
+            val className = superType.typeName as ClassName
             val fileSpec = FileSpec.builder(className)
             val typeSpec = TypeSpec.interfaceBuilder(className)
                 .addAnnotation(AnnotationSpec.builder(Serializable::class).addMember("%T::class", serializerClass).build())
+                .apply {
+                    superType.description?.let { addKdoc(it.toCodeBlock(::findConcreteType)) }
+                }
             fileSpec.addType(typeSpec.build())
             fileSpec.addType(serializerSpec)
             fileSpec.build()
@@ -279,7 +284,12 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
             }
     }
 
-    private fun Type.WithTypeName.Object.makeDataClassProps(typeStore: TypeStore, name: String, type: Type): DataClassProp {
+    private fun Type.WithTypeName.Object.makeDataClassProps(
+        typeStore: TypeStore,
+        name: String,
+        propInfo: Type.WithTypeName.Object.PropInfo
+    ): DataClassProp {
+        val type = propInfo.type
         val isRequired = name in requiredProps
         val defaultValue = defaultValues[name].run {
             if (type is Type.WithTypeName.Enum<*> && this is String) {
@@ -299,7 +309,13 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
 
         val default = actualType.makeDefaultValueCodeBlock(isRequired, defaultValue)
 
-        val prop = PropertySpec.builder(name, finalType).initializer(name)
+        val prop = PropertySpec.builder(name, finalType)
+            .apply {
+                if (propInfo.doc != null) {
+                    addKdoc(propInfo.doc.toCodeBlock(::findConcreteType))
+                }
+            }
+            .initializer(name)
         val param = ParameterSpec.builder(name, finalType).defaultValue(default)
 
         return DataClassProp(prop.build(), param.build(), name)

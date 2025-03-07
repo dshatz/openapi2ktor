@@ -18,7 +18,15 @@ interface IGenerator {
             is Type.Reference -> typeStore.resolveReference(jsonReference).makeTypeName()
             is Type.List -> List::class.asTypeName().parameterizedBy(itemsType.makeTypeName())
             is Type.SimpleType -> this.kotlinType
-            else -> { error("What type is this? $this") }
+        }
+    }
+
+    fun <T: Type> findConcreteType(type: T): Type.WithTypeName? {
+        return when (type) {
+            is Type.WithTypeName -> type
+            is Type.Reference -> findConcreteType(typeStore.resolveReference(type.jsonReference))
+            is Type.List -> null
+            is Type.SimpleType -> null
         }
     }
 

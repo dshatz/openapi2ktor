@@ -92,7 +92,7 @@ class TypeStore {
                 sb.appendLine("Properties: ".addSpaces(1))
                 type.props.entries.forEach {
                     sb.appendLine("-${it.key}".addSpaces(2))
-                    sb.appendLine(printType(it.value, parentObject = type, propName = it.key, depth = 3))
+                    sb.appendLine(printType(it.value.type, parentObject = type, propName = it.key, depth = 3))
                 }
             }
             is Type.SimpleType -> {

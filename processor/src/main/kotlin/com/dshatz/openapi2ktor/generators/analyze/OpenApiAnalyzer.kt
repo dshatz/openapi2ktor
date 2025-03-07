@@ -8,9 +8,11 @@ import com.reprezen.kaizen.oasparser.model3.Operation
 import com.reprezen.kaizen.oasparser.model3.Schema
 import com.squareup.kotlinpoet.*
 import com.dshatz.openapi2ktor.generators.Type.Companion.simpleType
+import com.dshatz.openapi2ktor.generators.Type.WithTypeName.Object.PropInfo
 import com.dshatz.openapi2ktor.generators.TypeStore
 import com.dshatz.openapi2ktor.generators.TypeStore.OperationParam.ParamLocation
 import com.dshatz.openapi2ktor.generators.clients.IClientGenerator
+import com.dshatz.openapi2ktor.kdoc.DocTemplate
 import com.dshatz.openapi2ktor.utils.*
 import com.reprezen.jsonoverlay.Overlay
 import com.reprezen.kaizen.oasparser.model3.Response
@@ -18,6 +20,7 @@ import kotlinx.coroutines.*
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import org.w3c.dom.TypeInfo
 import kotlin.coroutines.coroutineContext
 import kotlin.time.measureTime
 
@@ -183,7 +186,7 @@ open class OpenApiAnalyzer(
     }
 
 
-    private suspend fun Schema.makeProps(components: Boolean): List<Deferred<Pair<String, Type>>> = withContext(coroutineContext) {
+    private suspend fun Schema.makeProps(components: Boolean): List<Deferred<Pair<String, PropInfo>>> = withContext(coroutineContext) {
         properties.entries.map { (name, schema) ->
             async {
                 val type = schema.makeType(
@@ -193,14 +196,14 @@ open class OpenApiAnalyzer(
                     components = components,
                     wrapPrimitives = false
                 )
-                name to type
+                name to PropInfo(type, DocTemplate.Builder().add(schema.description).add(schema.example?.let { "\nExample: $it" }).build())
             }
         }
     }
 
     private val simpleTypes = listOf("string", "integer", "number", "boolean")
 
-    private suspend fun List<Deferred<Pair<String, Type>>>.awaitProps(): Map<String, Type> {
+    private suspend fun List<Deferred<Pair<String, PropInfo>>>.awaitProps(): Map<String, PropInfo> {
         return awaitAll().toMap()
     }
 
@@ -280,7 +283,8 @@ open class OpenApiAnalyzer(
                                 packageName,
                                 nameForObject.capitalize()
                             ).copy(nullable = canBeNull),
-                            elements = enums.filterNotNull().associateWith { it.toString().safeEnumEntryName() })
+                            elements = enums.filterNotNull().associateWith { it.toString().safeEnumEntryName() },
+                            description = DocTemplate.of(description))
                             .register()
                     } else {
                         String::class.asClassName().simpleType(isNullable).register()
@@ -343,7 +347,8 @@ open class OpenApiAnalyzer(
                             typeName = ClassName(packageName, nameForObject),
                             props = allProps,
                             requiredProps = allRequired,
-                            defaultValues = defaultValues
+                            defaultValues = defaultValues,
+                            description = DocTemplate.of(description)
                         ).register()
                     } else if (hasAnyOfSchemas()) {
                         // TODO: Generate an object with superset of fields but all fields optional?
@@ -393,7 +398,19 @@ open class OpenApiAnalyzer(
                 ClassName(modelPackageName(packages), nameForObject.capitalize()).copy(nullable = nullable ?: false),
                 props = props,
                 requiredProps = this.requiredFields,
-                defaultValues = properties.mapValues { it.value.default }
+                defaultValues = properties.mapValues { it.value.default },
+                description = DocTemplate.Builder()
+                    .add(description)
+                    .newLine()
+                    .addMany(props.entries) { idx, (name, info) ->
+                        if (info.doc != null) {
+                            add("@param [$name] ").addDoc(info.doc)
+                            newLine()
+                            add("@property [$name] ").addDoc(info.doc)
+                            newLine()
+                        }
+                    }
+                    .build()
             )
         } else {
             JsonObject::class.asClassName().simpleType(nullable ?: false)

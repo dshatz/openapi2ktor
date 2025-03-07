@@ -106,7 +106,7 @@ internal data class ObjectAssertScope(val obj: Type.WithTypeName.Object) {
         block: TypeAssertScope.() -> Unit
     ) {
         val prop = obj.props[name] ?: fail("Prop $name not found in object ${obj.simpleName()}")
-        block(TypeAssertScope(prop))
+        block(TypeAssertScope(prop.type))
     }
 
     fun assertProp(

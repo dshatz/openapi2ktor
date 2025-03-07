@@ -36,6 +36,7 @@ components:
   schemas:
     User:
       nullable: true
+      description: Normal user
       properties:
         id:
           type: integer
@@ -64,6 +65,7 @@ components:
         orders:
           type: array
           items:
+            description: Order element
             type: object
             properties:
               id:
