@@ -164,7 +164,7 @@ fun Schema.oneOfRefData(index: Int): ReferenceMetadata? {
 fun TypeStore.PathId.makeRequestFunName(dropPrefix: String): String {
     val endpointName = pathString.split("/").toMutableList()
         .replaceCurlyWithBy()
-        .joinToString("") {it.capitalize()}
+        .joinToString("") {it.safePropName().capitalize()}
         .replaceFirst(dropPrefix.capitalize(), "")
     return "$verb$endpointName"
 }

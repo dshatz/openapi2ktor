@@ -54,10 +54,11 @@ internal data class TypeAssertScope(val currentType: Type) {
     fun Type.check(block: TypeAssertScope.() -> Unit) = TypeAssertScope(this).block()
 
     fun assertArray(itemTypeScope: TypeAssertScope.() -> Unit) {
-        assertIs<Type.List>(currentType, message = "Array should be a SimpleType")
+        assertIs<Type.List>(currentType, message = "Not an Array")
         val itemType = currentType.itemsType
         itemTypeScope(TypeAssertScope(itemType))
     }
+
 
     fun assertOneOf(block: OneOfAssertScope.() -> Unit) {
         assertIs<Type.WithTypeName.OneOf>(currentType, message = "Not a oneOf!")

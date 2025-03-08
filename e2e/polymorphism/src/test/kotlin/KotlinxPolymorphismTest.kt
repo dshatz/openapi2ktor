@@ -100,7 +100,7 @@ class KotlinxPolymorphismTest {
             }
         """.trimIndent()
         val response = Json.decodeFromString<GetOrdersResponse400>(json)
-        assertEquals(11, response.get()["a"]?.jsonPrimitive?.int)
+        assertEquals(11, response.data["a"]?.jsonPrimitive?.int)
     }
 
 
@@ -112,7 +112,7 @@ class KotlinxPolymorphismTest {
             }
         """.trimIndent()
         val d = Json.decodeFromString<GetOrdersResponse403>(json)
-        assertIs<JsonObject>(d.get())
+        assertIs<JsonObject>(d.data)
     }
 
     @OptIn(ExperimentalSerializationApi::class)
@@ -129,7 +129,7 @@ class KotlinxPolymorphismTest {
     }
 
     @Test
-    fun `test optional fields default to null`() {
+    fun `test optional fields default to type default`() {
         val json = """
             {
               "error": "very bad error"
@@ -137,7 +137,7 @@ class KotlinxPolymorphismTest {
         """.trimIndent()
         val result = Json.decodeFromString<PostUsersResponse400>(json)
         assertNull(result.name)
-        assertNull(result.id)
+        assertEquals(0, result.id)
         assertNull(result.userType)
         assertEquals("very bad error", result.error)
     }

@@ -20,7 +20,6 @@ import kotlinx.coroutines.*
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import org.w3c.dom.TypeInfo
 import kotlin.coroutines.coroutineContext
 import kotlin.time.measureTime
 
@@ -48,6 +47,8 @@ open class OpenApiAnalyzer(
         println("Models: $modelsTime")
         println("Paths: $pathTime")
 
+        println(typeStore.printableSummary())
+
         typeStore.disambiguateTypeNames()
 
         val clientTemplates = clientGenerator.generateTemplates()
@@ -71,7 +72,7 @@ open class OpenApiAnalyzer(
                         Overlay.of(response).jsonReference,
                         true,
                         response.getResponseComponentRefInfo(),
-                        false
+                        WrapMode.None
                     )
                 }
             }
@@ -84,7 +85,7 @@ open class OpenApiAnalyzer(
             schema.jsonReference,
             components = true,
             referenceData = null,
-            wrapPrimitives = false
+            wrapMode = WrapMode.None
         )
     }
 
@@ -107,7 +108,7 @@ open class OpenApiAnalyzer(
                 param.jsonReference,
                 false,
                 operation.isParameterAReference(param.name),
-                false
+                WrapMode.None
             ).let { paramType ->
                 val where = when (param.`in`) {
                     "query" -> ParamLocation.QUERY
@@ -135,7 +136,7 @@ open class OpenApiAnalyzer(
                 errorInterface = iErrorClass.takeIf { multipleErrors }
             )
             operation.responses.map { (statusCode, response) ->
-                val wrapPrimitives = if (statusCode.toInt().isSuccessCode()) multipleSuccess else multipleErrors
+                val wrapPrimitives = if (statusCode.toInt().isSuccessCode()) multipleSuccess else true
                 processPathResponse(operation, response, pathId.pathString, statusCode.toInt(), pathId.verb, wrapPrimitives)
             }
         } else emptyList()
@@ -168,7 +169,12 @@ open class OpenApiAnalyzer(
         val refData = operation.isResponseAReference(statusCode)
         val jsonReference = Overlay.of(operation.responses).jsonReference + "/$statusCode"
         launch {
-            schema.makeType(modelName, jsonReference, referenceData = refData, wrapPrimitives = wrapPrimitives).also {
+            val mode = if (wrapPrimitives) {
+                if (statusCode.isSuccessCode()) WrapMode.Simple
+                else WrapMode.Exception
+            } else WrapMode.None
+            schema.makeType(modelName, jsonReference, referenceData = refData, wrapMode = mode).also {
+
                 typeStore.registerResponseMapping(TypeStore.PathId(pathString, verb), statusCode, ref?.target ?: jsonReference, it)
             }
         }
@@ -180,7 +186,7 @@ open class OpenApiAnalyzer(
                 val schema = operation.requestBody.contentMediaTypes.values.first().schema
                 val modelName = makeRequestBodyModelName(verb, pathString)
                 launch {
-                    schema.makeType(modelName, schema.jsonReference, referenceData = null, wrapPrimitives = false)
+                    schema.makeType(modelName, schema.jsonReference, referenceData = null, wrapMode = WrapMode.None)
                 }
             }
         }
@@ -195,7 +201,7 @@ open class OpenApiAnalyzer(
                     jsonReference = schema.jsonReference,
                     referenceData = propRefData(name),
                     components = components,
-                    wrapPrimitives = false
+                    wrapMode = WrapMode.None
                 )
                 name to PropInfo(type, DocTemplate.Builder().add(schema.description).add(schema.example?.let { "\nExample: $it" }).build())
             }
@@ -208,27 +214,58 @@ open class OpenApiAnalyzer(
         return awaitAll().toMap()
     }
 
+    enum class WrapMode {
+        Simple,
+        Exception,
+        None
+    }
+
     private suspend fun Schema?.makeType(
         nameForObject: String,
         jsonReference: String,
         components: Boolean = false,
         referenceData: ReferenceMetadata?,
-        wrapPrimitives: Boolean
+        wrapMode: WrapMode
     ): Type {
         println("Entering ${"component".takeIf { components } ?: ""} ${jsonReference.cleanJsonReference()}")
 
         val packageName = makePackageName(jsonReference, packages.models)
 
-        fun Type.wrapPrimitive(): Type.WithTypeName.PrimitiveWrapper {
-            if (this is Type.WithTypeName) error("Trying to wrap type: $this")
-            return Type.WithTypeName.PrimitiveWrapper(
-                ClassName(packageName, nameForObject),
-                wrappedType = this
-            )
+        fun Type.wrapPrimitive(): Type {
+            if (wrapMode != WrapMode.None) {
+                return Type.WithTypeName.PrimitiveWrapper(
+                    ClassName(packageName, nameForObject),
+                    wrappedType = this
+                ).also {
+                    if (wrapMode == WrapMode.Exception) {
+                        typeStore.extendException(it)
+                    }
+                }
+            } else {
+                // Exception wrap mode
+//                typeStore.extendException(this)
+                return this
+                /*return Type.WithTypeName.ExceptionWrapper(
+                    wrapped = this,
+                    ClassName(packageName, nameForObject + "Exception")
+                )*/
+            }
         }
 
         fun Type.register(): Type = run {
-            val typeToRegister = if (wrapPrimitives && this !is Type.WithTypeName) wrapPrimitive() else this
+            val typeToRegister = if (wrapMode == WrapMode.Simple && this !is Type.WithTypeName)
+                wrapPrimitive()
+            else if (wrapMode == WrapMode.Exception) {
+                if (this is Type.WithTypeName) {
+                    typeStore.extendException(this)
+                    this
+                } else {
+                    wrapPrimitive().also {
+                        typeStore.extendException(it)
+                    }
+                }
+            }
+            else this
 
             if (this@makeType?.isPartOfComponentSchema() == true && components && this !is Type.Reference) {
                 typeStore.registerComponentSchema(jsonReference, typeToRegister)
@@ -261,7 +298,7 @@ open class OpenApiAnalyzer(
                                 itemsSchema.jsonReference,
                                 referenceData = arrayItemRefData(),
                                 components = components,
-                                wrapPrimitives = false
+                                wrapMode = WrapMode.None
                             )
                         }
                     ).let {
@@ -326,7 +363,7 @@ open class OpenApiAnalyzer(
                                     nameForObject,
                                     it.jsonReference,
                                     referenceData = isReference,
-                                    wrapPrimitives = false
+                                    wrapMode = WrapMode.None
                                 ) to (discriminatorValue ?: it.name)
                             }.toMap()
 
@@ -380,7 +417,7 @@ open class OpenApiAnalyzer(
              *   "403":
              *     description: Empty response
              */
-            return if (wrapPrimitives) {
+            return if (wrapMode != WrapMode.None) {
                 JsonObject::class.asClassName().simpleType(false).register()
             } else {
                 Type.WithTypeName.Alias(

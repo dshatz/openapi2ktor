@@ -21,9 +21,86 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
 
         val objectSpecs = generateObjects()
         val superInterfaceSpecs = generateSuperInterfacesForOneOf(typeStore)
+//        val exceptionWrappers = generateExceptionWrappers()
         val aliases = generateTypeAliases(typeStore)
+        val wrappers = generatePrimitiveWrappers()
         val enums = generateEnums(typeStore)
-        return objectSpecs + superInterfaceSpecs + aliases + enums + responseMappings.files
+        return objectSpecs + superInterfaceSpecs + aliases + enums + responseMappings.files + wrappers
+    }
+
+    private fun generatePrimitiveWrapper(wrapper: Type.WithTypeName.PrimitiveWrapper, superClass: TypeName? = null): FileSpec {
+        val className = wrapper.typeName as ClassName
+        val fileSpec = FileSpec.builder(className)
+        val wrappedType = wrapper.wrappedType.makeTypeName()
+
+        val serializerClassname = ClassName(className.packageName, className.simpleName + "Serializer")
+
+        val typeSpec = TypeSpec.classBuilder(className)
+            .addSuperinterface(ClassName(packages.client, "Wrapper").parameterizedBy(wrappedType))
+            .addModifiers(KModifier.DATA)
+            .addAnnotation(AnnotationSpec.builder(Serializable::class)
+                .addMember("%T::class", serializerClassname).build())
+            .addProperty(
+                PropertySpec.builder(WRAPPER_PROP_NAME, wrappedType)
+                    .addModifiers(KModifier.OVERRIDE)
+                    .initializer(WRAPPER_PROP_NAME).build()
+            )
+            .primaryConstructor(
+                FunSpec.constructorBuilder().addParameter(
+                    ParameterSpec.builder(WRAPPER_PROP_NAME, wrappedType).build()
+                ).build()
+            )
+            .apply {
+                superClass?.let(::superclass)
+            }
+            .build()
+
+        /**
+         * class GetUsersListResponse205Serializer: KSerializer<GetUsersListResponse205> {
+         *         override val descriptor: SerialDescriptor = serializer<List<String>>().descriptor
+         *         override fun deserialize(decoder: Decoder): GetUsersListResponse205 {
+         *             return GetUsersListResponse205(decoder.decodeSerializableValue(serializer()))
+         *         }
+         *         override fun serialize(encoder: Encoder, value: GetUsersListResponse205) {
+         *             encoder.encodeSerializableValue(serializer(), value.data)
+         *         }
+         *     }
+         */
+        val serializerMember = MemberName("kotlinx.serialization", "serializer")
+        val serializer = TypeSpec.classBuilder(serializerClassname)
+            .addSuperinterface(KSerializer::class.asTypeName().parameterizedBy(className))
+            .addProperty(
+                PropertySpec.builder("descriptor", SerialDescriptor::class, KModifier.OVERRIDE)
+                    .initializer("serializer<%T>().descriptor", wrappedType).build()
+            )
+            .addFunction(
+                FunSpec.builder("deserialize")
+                    .addModifiers(KModifier.OVERRIDE)
+                    .returns(className)
+                    .addParameter(ParameterSpec("decoder", Decoder::class.asTypeName()))
+                    .addCode("return %T(decoder.decodeSerializableValue(%M()))", className, serializerMember)
+                    .build()
+            )
+            .addFunction(
+                FunSpec.builder("serialize")
+                    .addModifiers(KModifier.OVERRIDE)
+                    .addParameters(listOf(
+                        ParameterSpec("encoder", Encoder::class.asTypeName()),
+                        ParameterSpec("value", className)
+                    ))
+                    .addCode("encoder.encodeSerializableValue(%M(), value.%L)", serializerMember, WRAPPER_PROP_NAME)
+                    .build()
+            ).build()
+        return fileSpec.addType(typeSpec).addType(serializer).build()
+    }
+
+    private fun generatePrimitiveWrappers(): List<FileSpec> {
+        return typeStore.getTypes().values.filterIsInstance<Type.WithTypeName.PrimitiveWrapper>()
+            .map {
+                val superclass = responseMappings.responseSuperclasses[it]
+                val exception = typeStore.shouldExtendException(it)
+                generatePrimitiveWrapper(it, superclass ?: (Exception::class.asTypeName().takeIf { exception }))
+            }
     }
 
     internal fun generateObjects(): List<FileSpec> {
@@ -58,9 +135,10 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
             }
 
             responseMappings.responseSuperclasses[type]?.let {
-                typeSpecBuilder.addSuperinterface(it.copy(nullable = false))
+                typeSpecBuilder.superclass(it.copy(nullable = false))
             }
 
+            val exception = typeStore.shouldExtendException(type)
             val constructorBuilder = FunSpec.constructorBuilder()
             uniqueProps.forEach { (prop, param) ->
                 constructorBuilder.addParameter(param)
@@ -72,6 +150,9 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
                 .addModifiers(KModifier.DATA)
                 .apply {
                     type.description?.let { addKdoc(type.description.toCodeBlock(::findConcreteType)) }
+                    if (exception) {
+                        superclass(Exception::class)
+                    }
                 }
                 .addAnnotation(Serializable::class)
             fileSpec.addType(typeSpecBuilder.build())
@@ -134,67 +215,7 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
             wrapper
         }.mapKeys { it.key.type }
         return wrappers.mapValues { (type, wrapper) ->
-            val className = wrapper.typeName as ClassName
-            val fileSpec = FileSpec.builder(className)
-            val wrappedType = wrapper.wrappedType.makeTypeName()
-
-            val serializerClassname = ClassName(className.packageName, className.simpleName + "Serializer")
-
-            val typeSpec = TypeSpec.classBuilder(className)
-                .addSuperinterface(ClassName(packages.client, "Wrapper").parameterizedBy(wrappedType))
-                .addModifiers(KModifier.DATA)
-                .addAnnotation(AnnotationSpec.builder(Serializable::class)
-                    .addMember("%T::class", serializerClassname).build())
-                .addProperty(
-                    PropertySpec.builder("d", wrappedType)
-                        .addModifiers(KModifier.OVERRIDE)
-                        .initializer("d").build()
-                )
-                .primaryConstructor(
-                    FunSpec.constructorBuilder().addParameter(
-                        ParameterSpec.builder("d", wrappedType).build()
-                    ).build()
-                )
-                .addSuperinterface(superInterface)
-                .build()
-
-            /**
-             * class GetUsersListResponse205Serializer: KSerializer<GetUsersListResponse205> {
-             *         override val descriptor: SerialDescriptor = serializer<List<String>>().descriptor
-             *         override fun deserialize(decoder: Decoder): GetUsersListResponse205 {
-             *             return GetUsersListResponse205(decoder.decodeSerializableValue(serializer()))
-             *         }
-             *         override fun serialize(encoder: Encoder, value: GetUsersListResponse205) {
-             *             encoder.encodeSerializableValue(serializer(), value.data)
-             *         }
-             *     }
-             */
-            val serializerMember = MemberName("kotlinx.serialization", "serializer")
-            val serializer = TypeSpec.classBuilder(serializerClassname)
-                .addSuperinterface(KSerializer::class.asTypeName().parameterizedBy(className))
-                .addProperty(
-                    PropertySpec.builder("descriptor", SerialDescriptor::class, KModifier.OVERRIDE)
-                        .initializer("serializer<%T>().descriptor", wrappedType).build()
-                )
-                .addFunction(
-                    FunSpec.builder("deserialize")
-                        .addModifiers(KModifier.OVERRIDE)
-                        .returns(className)
-                        .addParameter(ParameterSpec("decoder", Decoder::class.asTypeName()))
-                        .addCode("return %T(decoder.decodeSerializableValue(%M()))", className, serializerMember)
-                        .build()
-                )
-                .addFunction(
-                    FunSpec.builder("serialize")
-                        .addModifiers(KModifier.OVERRIDE)
-                        .addParameters(listOf(
-                            ParameterSpec("encoder", Encoder::class.asTypeName()),
-                            ParameterSpec("value", className)
-                        ))
-                        .addCode("encoder.encodeSerializableValue(%M(), value.d)", serializerMember)
-                        .build()
-                ).build()
-            fileSpec.addType(typeSpec).addType(serializer).build()
+            generatePrimitiveWrapper(wrapper, superInterface)
         }
     }
 
@@ -207,14 +228,11 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
             val iResponseClass = typeStore.getResponseSuccessInterface(pathId)
             val iErrorClass = typeStore.getResponseErrorInterface(pathId)
 
-            /*val packages = responseTypeInfos.values.map { makePackageName(it.jsonReference, packages.models) }
-            assert(packages.toSet().size == 1, lazyMessage = { "packages differ! $packages" })*/
-
             val iResponse = iResponseClass?.let {
-                TypeSpec.interfaceBuilder(iResponseClass).addModifiers(KModifier.SEALED).build()
+                TypeSpec.classBuilder(iResponseClass).addModifiers(KModifier.SEALED).build()
             }
             val iError = iErrorClass?.let {
-                TypeSpec.interfaceBuilder(iErrorClass).addModifiers(KModifier.SEALED).build()
+                TypeSpec.classBuilder(iErrorClass).addModifiers(KModifier.SEALED).superclass(Exception::class).build()
             }
             val successWrappedTypes = iResponseClass?.let {
                 generatePrimitiveResponseWrappers(successTypes.values, iResponseClass)
@@ -232,9 +250,7 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
             } else null
 
             Pair(
-                first = successWrappedTypes?.values.orEmpty()
-                        + errorWrappedTypes?.values.orEmpty()
-                        + listOfNotNull(successFile, errorFile),
+                first = listOfNotNull(successFile, errorFile),
                 second =
                     successTypes.mapKeys { it.value.type }.mapValues { iResponseClass }
                             + otherTypes.mapKeys { it.value.type }.mapValues { iErrorClass }
@@ -305,9 +321,9 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
         val actualType = if (type is Type.Reference) typeStore.resolveReference(type.jsonReference) else type
         val isNullable = actualType.makeTypeName().isNullable
 
-        val finalType = actualType.addNullabilityIfOptional(isRequired)
 
         val default = actualType.makeDefaultValueCodeBlock(isRequired, defaultValue)
+        val finalType = actualType.nullableIfNoDefault(isRequired, default)
 
         val prop = PropertySpec.builder(name, finalType)
             .apply {
@@ -368,5 +384,9 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
             .addSuperclassConstructorParameter("%T::class", superClassName)
             .addFunction(function)
             .build()
+    }
+
+    companion object {
+        const val WRAPPER_PROP_NAME = "data"
     }
 }

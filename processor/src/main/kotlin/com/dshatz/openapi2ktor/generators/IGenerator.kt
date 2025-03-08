@@ -4,6 +4,11 @@ import com.dshatz.openapi2ktor.utils.makeCodeBlock
 import com.dshatz.openapi2ktor.utils.makeDefaultPrimitive
 import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.CodeBlock
+import com.squareup.kotlinpoet.DOUBLE
+import com.squareup.kotlinpoet.FLOAT
+import com.squareup.kotlinpoet.INT
+import com.squareup.kotlinpoet.LIST
+import com.squareup.kotlinpoet.ParameterizedTypeName
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
 import com.squareup.kotlinpoet.TypeName
 import com.squareup.kotlinpoet.asTypeName
@@ -13,11 +18,8 @@ interface IGenerator {
 
     val typeStore: TypeStore
     fun <T: Type> T.makeTypeName(): TypeName {
-        return when (this) {
-            is Type.WithTypeName -> typeName as ClassName
-            is Type.Reference -> typeStore.resolveReference(jsonReference).makeTypeName()
-            is Type.List -> List::class.asTypeName().parameterizedBy(itemsType.makeTypeName())
-            is Type.SimpleType -> this.kotlinType
+        return with (typeStore) {
+            makeTypeName()
         }
     }
 
@@ -30,12 +32,12 @@ interface IGenerator {
         }
     }
 
-    fun Type.addNullabilityIfOptional(isRequired: Boolean): TypeName {
+    fun Type.nullableIfNoDefault(isRequired: Boolean, default: CodeBlock?): TypeName {
         val original = this.makeTypeName()
         return if (isRequired) {
             makeTypeName()
         } else {
-            if (!original.isNullable) {
+            if (!original.isNullable && default.toString() == "null") {
                 original.copy(nullable = true)
             } else original
         }
@@ -61,21 +63,33 @@ interface IGenerator {
                 }
             }
             Float::class.asTypeName() -> CodeBlock.of("%Lf", default)
-            Double::class.asTypeName() -> CodeBlock.of("%L", String.format("%.02f", default))
+            Double::class.asTypeName() -> CodeBlock.of("%L", default as Double)
             else -> CodeBlock.of("%L", default)
         }
     }
 
-    fun Type.makeDefaultValueCodeBlock(isRequired: Boolean, defaultValue: Any?): CodeBlock? {
+    fun Type.makeDefaultValueCodeBlock(isRequired: Boolean, defaultValue: Any?, useKotlinDefaults: Boolean = true): CodeBlock? {
         return if (!isRequired) {
             if (defaultValue != null) {
                 // Optional and non-null default is provided. Set that default.
                 defaultValue(defaultValue)
-            } else {
+            } else if (useKotlinDefaults) {
                 // Optional and no default value provided, or default of null.
-                CodeBlock.of("null")
-            }
+                typeDefaultValue()
+            } else CodeBlock.of("null")
         } else defaultValue?.let { defaultValue(it) }
+    }
+
+    private fun Type.typeDefaultValue(): CodeBlock {
+        return when (this.makeTypeName().run {
+            if (this is ParameterizedTypeName) this.rawType else this
+        }) {
+            INT -> CodeBlock.of("0")
+            FLOAT -> CodeBlock.of("0f")
+            DOUBLE -> CodeBlock.of("0.0")
+            LIST -> CodeBlock.of("emptyList()")
+            else -> CodeBlock.of("null")
+        }
     }
 
 }

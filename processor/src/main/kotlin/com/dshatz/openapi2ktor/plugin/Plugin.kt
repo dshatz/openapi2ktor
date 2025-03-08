@@ -1,6 +1,7 @@
 package com.dshatz.openapi2ktor.plugin
 
 import com.dshatz.openapi2ktor.Cli
+import com.dshatz.openapi2ktor.utils.capitalize
 import org.gradle.api.DefaultTask
 import org.gradle.api.Plugin
 import org.gradle.api.Project
@@ -13,14 +14,10 @@ class Plugin : Plugin<Project> {
     override fun apply(project: Project) {
         val extension = project.extensions.create("openapi3", OpenApiPluginExtension::class.java)
 
-
-
-
-
         project.afterEvaluate {
             extension.generators.forEach {
                 val output = project.layout.buildDirectory.dir("openapi").get().dir(it.name).asFile.path
-                project.tasks.register("generate${it.name}Clients", GenerateTask::class.java) { task ->
+                project.tasks.register("generate${it.name.capitalize()}Clients", GenerateTask::class.java) { task ->
                     task.group = "openapi3"
                     task.currentProjectPath = project.projectDir.absolutePath
                     task.generator = it

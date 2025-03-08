@@ -27,7 +27,7 @@ class OrdersApiClient(
      * @param optionalParam - optional but not originally nullable (query)
      *
      */
-    suspend fun getOrders(limit: Int, optionalParam: Int? = null): HttpResult<IResponse, IErrorResponse> {
+    suspend fun getOrders(limit: Int, optionalParam: Int? = null): HttpResult<IResponse, Response401> {
         val pathParams = mapOf(
             "a" to 1
         )
@@ -49,9 +49,9 @@ class OrdersApiClient(
             return HttpResult.Ok(result, response)
         } catch (e: ClientRequestException) {
             // 4xx
-            val responseData: IErrorResponse? = when (e.response.status.value) {
+            val responseData: Response401 = when (e.response.status.value) {
                 401 -> e.response.body<Response401>()
-                else -> null
+                else -> throw e
             }
             return HttpResult.Failure(responseData, e.response, e)
         }
@@ -83,7 +83,7 @@ class OrdersApiClient(
     data class Response201(val error: String): IResponse
 
     @Serializable
-    data class Response401(val error: String): IErrorResponse
+    data class Response401(val error: String): IErrorResponse, Exception()
 
     @Serializable
     sealed interface IResponse
@@ -92,11 +92,17 @@ class OrdersApiClient(
     sealed interface IErrorResponse
 
 
-    sealed class HttpResult<D, E> {
+    sealed class HttpResult<D, E: Exception> {
         abstract val raw: HttpResponse
 
-        data class Ok<D, E>(val data: D, override val raw: HttpResponse): HttpResult<D, E>()
-        data class Failure<D, E>(val errorBody: E?, override val raw: HttpResponse, val cause: Throwable): HttpResult<D, E>()
+        data class Ok<D, E: Exception>(val data: D, override val raw: HttpResponse): HttpResult<D, E>()
+        data class Failure<D, E: Exception>(val errorBody: E, override val raw: HttpResponse, val cause: Throwable): HttpResult<D, E>()
+
+        public fun dataOrThrow(): D =
+            when (this) {
+                is HttpResult.Ok -> data
+                is Failure -> throw this.errorBody
+            }
     }
 
     interface Wrapper<T> {

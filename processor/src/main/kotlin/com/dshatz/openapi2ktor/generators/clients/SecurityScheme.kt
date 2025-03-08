@@ -52,7 +52,7 @@ sealed class Http(): SecurityScheme() {
         }
 
         override fun generateApplicator(name: String): CodeBlock {
-            return CodeBlock.of("bearerAuth(%L.bearer)", generateAccessor(name))
+            return CodeBlock.of("%L?.bearer?.let { %M(it) }", generateAccessor(name), MemberName("io.ktor.client.request", "bearerAuth"))
         }
     }
 
@@ -94,7 +94,8 @@ data class OAuth(override val description: String = "", val flows: Map<String, O
 data class ApiKey(
     @SerialName("in") val where: In,
     val name: String,
-    override val description: String = ""
+    override val description: String = "",
+    @SerialName("x-bearer-format") val bearerFormat: String? = null
 ): SecurityScheme() {
     override fun generateSetter(name: String): FunSpec {
         return FunSpec.builder("set${name.capitalize()}")

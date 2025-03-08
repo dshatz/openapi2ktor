@@ -10,6 +10,7 @@ sealed class Type {
     open fun packageName(): String = "<no_package>"
     fun qualifiedName(): String = packageName() + "." + simpleName()
 
+
     data class SimpleType(val kotlinType: TypeName) : Type() {
         override fun toString(): String = "SimpleType(${(kotlinType as ClassName).simpleName})"
         override fun simpleName(): String = toString()

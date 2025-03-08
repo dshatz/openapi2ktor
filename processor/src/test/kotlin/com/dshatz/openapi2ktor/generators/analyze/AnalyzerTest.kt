@@ -279,8 +279,11 @@ class AnalyzerTest: BaseTestClass() {
         analyzer.processPathResponse(op, response, "/orders", 400, verb = "get", wrapPrimitives = true)
         val mapping = typeStore.getResponseMapping(PathId("/orders", "get"))
         assertNotEquals(0, mapping.size)
-        assertIs<Type.WithTypeName.PrimitiveWrapper>(mapping[400]?.type)
+        val type400 = mapping[400]?.type
+        assertIs<Type.WithTypeName.PrimitiveWrapper>(type400)
+        assertGenerated(type400.simpleName(), type400.packageName()) {
 
+        }
     }
 
     @Test
@@ -403,9 +406,13 @@ class AnalyzerTest: BaseTestClass() {
         analyzer.processResponseComponents(api.responses)
         analyzer.processPath(pathId, op)
         val response400Type = typeStore.getResponseMapping(pathId)[400]?.type
-        assertIs<Type.Reference>(response400Type)
-        assertCanResolve(response400Type.jsonReference) {
-            assertReferenceToComponent("basic-error")
+        assertIs<Type.WithTypeName.PrimitiveWrapper>(response400Type)
+        assertGenerated(response400Type.simpleName(), response400Type.packageName()) {
+            assertPrimitiveWrapper {
+                assertReferenceToResponse("bad_request", typeStore) {
+
+                }
+            }
         }
     }
 

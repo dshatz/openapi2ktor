@@ -6,10 +6,13 @@ import io.ktor.http.*
 import io.ktor.util.*
 import io.ktor.client.engine.*
 import io.ktor.client.plugins.contentnegotiation.*
+import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.RedirectResponseException
+import io.ktor.client.plugins.ServerResponseException
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.client.statement.*
 
-class BaseClient(engine: HttpClientEngine, config: HttpClientConfig<*>.() -> Unit = {}) {
+open class BaseClient(engine: HttpClientEngine, config: HttpClientConfig<*>.() -> Unit = {}) {
     internal val httpClient = HttpClient(engine) {
         expectSuccess = true
         install(ContentNegotiation) {
@@ -22,22 +25,30 @@ class BaseClient(engine: HttpClientEngine, config: HttpClientConfig<*>.() -> Uni
 
 }
 
-sealed class HttpResult<D, E> {
+sealed class HttpResult<D, E: Exception> {
     abstract val raw: HttpResponse
 
-    data class Ok<D, E>(val data: D, override val raw: HttpResponse): HttpResult<D, E>()
-    data class Failure<D, E>(val errorBody: E?, override val raw: HttpResponse, val cause: Throwable): HttpResult<D, E>()
+    data class Ok<D, E: Exception>(val data: D, override val raw: HttpResponse): HttpResult<D, E>()
+    data class Failure<D, E: Exception>(val errorBody: E, override val raw: HttpResponse, val cause: Throwable): HttpResult<D, E>()
 
-    fun getOrNull(onError: (error: E) -> Unit = {}): D? {
+    fun dataOrNull(onError: (error: Failure<D, E>) -> Unit = {}): D? {
         return when (this) {
             is Ok -> data
             is Failure -> {
-                onError(this.errorBody!!)
+                onError(this)
                 null
             }
         }
     }
+    public fun dataOrThrow(): D =
+        when (this) {
+            is HttpResult.Ok -> data
+            is Failure -> throw this.errorBody
+        }
 }
+
+data class UnknownSuccessCodeError(val body: String, val statusCode: Int, val response: HttpResponse): Exception("Unknown success status code $statusCode")
+data class OpenAPIResponseError(val body: String, val statusCode: Int, val response: HttpResponse): Exception("Status $statusCode from ${response.request.url}")
 
 
 sealed class AuthScheme {
@@ -47,8 +58,8 @@ sealed class AuthScheme {
 }
 
 interface Wrapper<T> {
-    abstract val d: T
-    fun get(): T = d
+    abstract val data: T
+    fun get(): T = data
 }
 
 fun <T> HttpRequestBuilder.addOptionalParam(name: String, value: T?, isNullable: Boolean) {

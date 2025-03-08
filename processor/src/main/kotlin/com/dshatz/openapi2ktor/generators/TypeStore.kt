@@ -2,6 +2,9 @@ package com.dshatz.openapi2ktor.generators
 
 import com.dshatz.openapi2ktor.utils.*
 import com.squareup.kotlinpoet.ClassName
+import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
+import com.squareup.kotlinpoet.TypeName
+import com.squareup.kotlinpoet.asTypeName
 import java.util.concurrent.ConcurrentHashMap
 
 class TypeStore {
@@ -13,6 +16,7 @@ class TypeStore {
     private val responseMapping: MutableMap<PathId, MutableMap<Int, ResponseTypeInfo>> = mutableMapOf()
     private val responseInterfaces: MutableMap<PathId, Pair<ClassName?, ClassName?>> = mutableMapOf()
     private val operationParameters: MutableMap<PathId, List<OperationParam>> = mutableMapOf()
+    private val exceptionTypes: MutableSet<Type> = mutableSetOf()
 
     fun registerType(jsonReference: String, type: Type) {
         println("Registering type! ${type.simpleName()}; ${jsonReference.cleanJsonReference()}")
@@ -30,6 +34,14 @@ class TypeStore {
             it[status] = ResponseTypeInfo(type, jsonReference.cleanJsonReference())
         }
         responseMapping[path] = map
+    }
+
+    fun extendException(type: Type) {
+        exceptionTypes.add(type)
+    }
+
+    fun shouldExtendException(type: Type): Boolean {
+        return type in exceptionTypes
     }
 
     data class PathId(val pathString: String, val verb: String) {
@@ -64,6 +76,15 @@ class TypeStore {
             QUERY,
             PATH,
             HEADER
+        }
+    }
+
+    fun <T: Type> T.makeTypeName(): TypeName {
+        return when (this) {
+            is Type.WithTypeName -> typeName as ClassName
+            is Type.Reference -> resolveReference(jsonReference).makeTypeName()
+            is Type.List -> List::class.asTypeName().parameterizedBy(itemsType.makeTypeName())
+            is Type.SimpleType -> this.kotlinType
         }
     }
 

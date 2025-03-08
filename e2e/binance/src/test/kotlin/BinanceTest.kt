@@ -2,6 +2,7 @@ import com.example.client.BaseClient
 import com.example.client.HttpResult
 import com.example.client.Servers
 import com.example.client.api.ApiClient
+import com.example.models.paths.api.v3.avgPrice.get.response.GetApiV3AvgPriceResponse400
 import io.ktor.client.engine.cio.*
 import io.ktor.client.engine.mock.*
 import io.ktor.client.plugins.*
@@ -19,6 +20,7 @@ import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import org.junit.Assert.assertThrows
 import kotlin.coroutines.coroutineContext
 import kotlin.test.*
 
@@ -32,35 +34,35 @@ class BinanceTest {
     }
 
 
-    val apiClient = BaseClient(CIO) {
-        defaultRequest {
-            url(Servers.API_BINANCE_COM.url)
-        }
+    private val binance = ApiClient(CIO) {
         install(Logging) {
-            this.level = LogLevel.ALL
+            level = LogLevel.ALL
             logger = Logger.SIMPLE
         }
     }
-    private val binance = ApiClient(client = apiClient)
     @Test
     fun `get with invalid param`() = runTest {
         val r = binance.getV3AvgPrice("")
         var errorReturned = false
-        val a = r.getOrNull {
+        val a = r.dataOrNull {
             errorReturned = true
-            println(it.msg)
+            println(it.errorBody.data.msg)
         }
         assertNull(a)
         assertTrue(errorReturned)
+
+        println(assertFailsWith(GetApiV3AvgPriceResponse400::class) {
+            binance.getV3AvgPrice("").dataOrThrow()
+        }.data.msg)
     }
 
     @Test
     fun `get with valid param`() = runTest {
         val r = binance.getV3AvgPrice("BTCEUR")
         var errorReturned = false
-        val price = r.getOrNull {
+        val price = r.dataOrNull {
             errorReturned = true
-            println(it.msg)
+            println(it.errorBody.data.msg)
         }!!.price
         assertNotNull(price)
         assertFalse(errorReturned)
@@ -82,7 +84,7 @@ class BinanceTest {
     fun `handle unknown error response`() = runTest {  }
 
     data class Mocker(val normalClient: ApiClient, val mockEngine: MockEngine = MockEngine { respondBadRequest() }) {
-        val mockClient = ApiClient(BaseClient(mockEngine))
+        val mockClient = ApiClient(mockEngine)
     }
 
     private suspend inline fun <reified T> Mocker.makeRequest(

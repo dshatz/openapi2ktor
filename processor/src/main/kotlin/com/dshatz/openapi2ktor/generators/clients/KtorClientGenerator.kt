@@ -26,7 +26,13 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
     private val addOptionalHeaderParamHelper = MemberName(packages.client, "addOptionalHeaderParam")
     private val addRequiredHeaderParamHelper = MemberName(packages.client, "addRequiredHeaderParam")
     private val addPathParamHelper = MemberName(packages.client, "replacePathParams")
+    private val unknownSuccessException = ClassName(packages.client, "UnknownSuccessCodeError")
+    private val unknownErrorException = ClassName(packages.client, "OpenAPIResponseError")
+    private val ktorBodyMethod = MemberName("io.ktor.client.call", "body")
+    val libResultClass = ClassName(packages.client, "HttpResult")
+
     private lateinit var securitySchemes: Map<String, SecurityScheme>
+    private var globalSecurityRequirements: List<String> = emptyList()
 
     override fun generate(schema: OpenApi3): List<FileSpec> {
         processSecurity(schema)
@@ -53,7 +59,15 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
             securitySchemes = Json {
                 ignoreUnknownKeys = true
             }.decodeFromString<Map<String, SecurityScheme>>(Overlay.of(schema.securitySchemes).toJson().toString())
+                .mapValues { (name, scheme) ->
+                    if (scheme is ApiKey && scheme.bearerFormat == "bearer") {
+                        // Some strange syntax for defining bearer.
+                        // For example in TMDB and https://github.com/nulltea/kicksware-api/blob/master/openapi.yaml
+                        Http.Bearer("")
+                    } else scheme
+                }
         } else securitySchemes = emptyMap()
+        globalSecurityRequirements = schema.securityRequirements.flatMap { it.requirements.keys }
     }
 
     private fun generateServersEnum(schema: OpenApi3): FileSpec {
@@ -78,12 +92,23 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
     }
 
     private fun generateClientForPackagePrefix(api: OpenApi3, prefix: String, paths: Map<String, Path>): FileSpec {
+        val configLambdaType = LambdaTypeName.get(
+            receiver = HttpClientConfig::class.asTypeName().parameterizedBy(STAR),
+            returnType = UNIT
+        )
         val params = listOf(
+            ParameterSpec.builder("engine", HttpClientEngine::class).build(),
+            ParameterSpec.builder("baseUrl", String::class.asTypeName())
+                .run { if (api.hasServers()) defaultValue("%S", api.servers.first().url) else this }
+                .build(),
+            ParameterSpec.builder("config", configLambdaType).defaultValue(CodeBlock.of("{}")).build()
+        )
+        /*val params = listOf(
             ParameterSpec.builder("client", baseApiClientType).build(),
             ParameterSpec.builder("baseUrl", String::class.asTypeName())
                 .run { if (api.hasServers()) defaultValue("%S", api.servers.first().url) else this }
                 .build()
-        )
+        )*/
         val constructor = FunSpec.constructorBuilder().addParameters(params).build()
         val props = params.map { PropertySpec.builder(it.name, it.type, KModifier.PRIVATE).initializer(it.name).build() }
 
@@ -103,13 +128,40 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
         val authSchemeSetters = securitySchemes.map { (name, scheme) ->
            scheme.generateSetter(name)
         }
+        val httpClientFactory = HttpClientEngineFactory::class.asTypeName().parameterizedBy(STAR)
 
         val prefixClientName = ClassName(packages.client + "." + prefix.safePropName(), "${prefix.capitalize()}Client")
         val clientType = TypeSpec.classBuilder(prefixClientName)
             .primaryConstructor(constructor)
+            .superclass(baseApiClientType)
+            .addSuperclassConstructorParameter(CodeBlock.of("engine"))
+            .addSuperclassConstructorParameter(
+                CodeBlock.builder()
+                    .beginControlFlow("")
+                    .beginControlFlow("%M", MemberName("io.ktor.client.plugins", "defaultRequest"))
+                    .addStatement("url(%N)",
+                        "baseUrl"
+                    )
+                    .endControlFlow() // end defaultRequest
+                    .addStatement("config()")
+                    .endControlFlow()
+                    .build()
+            )
+            .addFunction(
+                FunSpec.constructorBuilder()
+                    .addParameter("engine", httpClientFactory)
+                    .addParameters(params.drop(1))
+                    .callThisConstructor("engine.create()", "baseUrl", "config")
+                    .build()
+            )
             .addProperties(props)
             .addAnnotation(AnnotationSpec.builder(Suppress::class).addMember("%S", "unused").build())
-            .addFunctions(generateFunctions(api, paths, prefix))
+            .apply {
+                generateFunctions(paths, prefix).forEach { (function, exception) ->
+                    addFunction(function)
+//                    addType(exception)
+                }
+            }
             .addFunctions(authSchemeSetters)
             .addProperty(authSchemesProp)
             .build()
@@ -131,10 +183,21 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
         }
     }
 
-    private fun generateFunctions(api: OpenApi3, paths: Map<String, Path>, prefix: String): List<FunSpec> {
-        val funcSpecs: List<FunSpec> = paths.flatMap { (pathString, path) ->
+    data class EndpointTools(
+        val func: FunSpec,
+        val exceptionClass: TypeSpec,
+    )
+
+    /**
+     * Generate endpoint methods and a error exception class.
+     */
+    private fun generateFunctions(paths: Map<String, Path>, prefix: String): List<EndpointTools> {
+        val funcSpecs: List<EndpointTools> = paths.flatMap { (pathString, path) ->
             path.operations.map { (verb, operation) ->
-                val requiredSecuritySchemes = operation.securityRequirements.flatMap { it.requirements.keys }
+                val pathLevelSecurity = operation.securityRequirements.flatMap { it.requirements.keys }
+                val security = if (pathLevelSecurity.isEmpty())
+                    globalSecurityRequirements
+                else pathLevelSecurity
                 val statusToResponseType = operation.responses.mapValues { (statusCode, response) ->
                     val resposneRef = Overlay.of(response).jsonReference
                     val responseModel = typeStore.getResponseMapping(TypeStore.PathId(pathString, verb))[statusCode.toInt()]?.type
@@ -148,22 +211,22 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                 val successResponseClass = if (iResponseClass != null)
                     iResponseClass
                 else {
-                    val successResponse = operation.responses.entries.singleOrNull { it.key.toInt().isSuccessCode() }
-                    successResponse?.value?.resolveReference()?.resolveClassName() ?: JsonObject::class.asTypeName()
+                    val successResponse = statusToResponseType.entries.singleOrNull { it.key.toInt().isSuccessCode() }?.value
+                    successResponse?.resolveClassName() ?: JsonObject::class.asTypeName()
                 }
 
                 val errorResponseClass = if (iErrorClass != null)
                     iErrorClass
                 else {
-                    val errorResponse = operation.responses.entries.singleOrNull { !it.key.toInt().isSuccessCode() }
-                    errorResponse?.value?.resolveReference()?.resolveClassName() ?: JsonObject::class.asTypeName()
+                    val errorResponse = statusToResponseType.entries.singleOrNull { !it.key.toInt().isSuccessCode() }?.value
+                    errorResponse?.resolveClassName() ?: unknownErrorException
                 }
 
                 val params = typeStore.getParamsForOperation(pathID)
                 val paramSpecs = params.associateWith {
-                    val finalType = it.type.addNullabilityIfOptional(it.isRequired)
+                    val defaultCode = it.type.makeDefaultValueCodeBlock(it.isRequired, null, useKotlinDefaults = false)
                     // Default value in parameters are just examples that the server will assume if parameter is not received.
-                    val defaultCode = it.type.makeDefaultValueCodeBlock(it.isRequired, null)
+                    val finalType = it.type.nullableIfNoDefault(it.isRequired, null)
 
                     ParameterSpec.builder(it.name.safePropName(), finalType)
                         .defaultValue(defaultCode)
@@ -171,9 +234,11 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                 }
 
                 val description = operation.description
-                val libResultClass = ClassName(packages.client, "HttpResult")
-                val ktorBodyMethod = MemberName("io.ktor.client.call", "body")
                 val funName = pathID.makeRequestFunName(dropPrefix = prefix)
+
+                val exceptionTypeName = funName.capitalize() + "Exception"
+                val exceptionType = buildResponseException(exceptionTypeName, errorResponseClass)
+
                 val requestFun = FunSpec.builder(funName)
                     .returns(libResultClass.parameterizedBy(successResponseClass, errorResponseClass))
                     .addModifiers(KModifier.SUSPEND)
@@ -184,7 +249,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                     .addCode(
                         CodeBlock.builder()
                             .beginControlFlow("try")
-                            .beginControlFlow("val response = client.httpClient.%M(%L)",
+                            .beginControlFlow("val response = httpClient.%M(%L)",
                                 MemberName("io.ktor.client.request", verb, isExtension = true),
                                 CodeBlock.of("%S%L", pathString, CodeBlock.builder().apply {
                                     // Replace path params in url of client.<verb>(url)
@@ -207,42 +272,72 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                                 }
                             }.apply {
                                 // Add security
-                                requiredSecuritySchemes.forEach {
+                                security.forEach {
                                     securitySchemes[it]?.generateApplicator(it)?.apply(::add)
                                 }
                             }
                             .endControlFlow() // request config
                             .beginControlFlow("val result = when (response.status.value)") // begin when
                             .apply {
+                                // Success status code mapping
                                 statusToResponseType.filterKeys { it.toInt().isSuccessCode() }.forEach { (code, type) ->
                                     addStatement("%L -> response.%M<%T>()", code.toInt(), ktorBodyMethod, type.resolveClassName())
                                 }
                                 if (statusToResponseType.isEmpty()) {
                                     addStatement("else -> response.%M<%T>()", ktorBodyMethod, successResponseClass)
                                 } else {
-                                    addStatement("else -> error(\"Unknown success status code \${response.status.value}.\")")
+                                    addStatement("else -> throw %T(response.%M(), response.status.value, response)", unknownSuccessException, ktorBodyMethod)
                                 }
                             }
                             .endControlFlow() // end when
                             .addStatement("return %T.Ok(result, response)", libResultClass)
                             .endControlFlow() //try
                             .beginControlFlow("catch (e: %T)", ClientRequestException::class)
-                            .beginControlFlow("val responseData: %T? = when(e.response.status.value)", errorResponseClass)  // begin when
+                            .beginControlFlow("val responseData: %T = when(e.response.status.value)", errorResponseClass)  // begin when
                             .apply {
+                                // Error status code mapping
                                 statusToResponseType.filterKeys { !it.toInt().isSuccessCode() }.forEach { (status, type) ->
                                     addStatement("%L -> e.response.%M<%T>()", status.toInt(), ktorBodyMethod, type.resolveClassName())
                                 }
-                                addStatement("else -> null")
+                                if (statusToResponseType.isEmpty()) {
+                                    addStatement("else -> response.%M<%T>()", ktorBodyMethod, errorResponseClass)
+                                } else {
+                                    addStatement("else -> throw e")
+                                }
                             }
                             .endControlFlow() // end when
                             .addStatement("return %T.Failure(responseData, e.response, e)", libResultClass)
                             .endControlFlow() // catch
                             .build()
                     ).build()
-                requestFun
+                EndpointTools(requestFun, exceptionType)
             }
         }
         return funcSpecs
+    }
+
+    private fun buildResponseException(exceptionTypeName: String, errorResponseClass: TypeName): TypeSpec {
+        return TypeSpec.classBuilder(exceptionTypeName)
+            .addModifiers(KModifier.DATA)
+            .superclass(Exception::class)
+            .addProperties(listOf(
+                PropertySpec.builder("body", errorResponseClass)
+                    .initializer("body")
+                    .build(),
+                PropertySpec.builder("reason", ClassName(libResultClass.packageName, "HttpResult.Failure").parameterizedBy(STAR, errorResponseClass))
+                    .initializer("reason")
+                    .build()
+            ))
+            .apply {
+                primaryConstructor(
+                    FunSpec.constructorBuilder()
+                        .addParameters(propertySpecs.map {
+                            ParameterSpec.builder(it.name, it.type).build()
+                        }).build()
+                )
+            }
+            .addSuperclassConstructorParameter("reason.cause.message, reason.cause")
+            .build()
     }
 
 

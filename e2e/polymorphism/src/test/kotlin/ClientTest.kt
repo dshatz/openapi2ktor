@@ -3,25 +3,23 @@ import com.denisbrandi.netmock.NetMockRequest
 import com.denisbrandi.netmock.NetMockResponseBuilder
 import com.denisbrandi.netmock.engine.NetMockEngine
 import com.example.client.BaseClient
-import com.example.client.Servers
 import com.example.client.orders.OrdersClient
 import com.example.client.users.UsersClient
 import com.example.models.components.parameters.UserTypeParam
 import com.example.models.components.schemas.AdminUser.AdminUser
 import com.example.models.paths.users.get.response.GetUsersResponse200
-import com.example.models.paths.users.get.response.GetUsersResponse201
-import com.example.models.paths.users.get.response.GetUsersResponse205
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.JsonObject
-import org.junit.runner.Request.method
-import kotlin.test.*
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertNull
 
 class ClientTest {
     private val netMock = NetMockEngine()
 
     @Test
     fun `list of oneof where one type is nullable`() = runTest {
-        val users = UsersClient(BaseClient(netMock))
+        val users = UsersClient(netMock, baseUrl = "http://localhost")
         mockGet("/users/alice", """
             null
         """.trimIndent())
@@ -57,7 +55,7 @@ class ClientTest {
 
     @Test
     fun `test with api key`() = runTest {
-        val orders = OrdersClient(BaseClient(netMock))
+        val orders = OrdersClient(netMock)
         orders.setApiKeyAuth("my_secret_key")
         interceptRequest("/orders") {
             assertEquals("my_secret_key", mandatoryHeaders["X-MBX-APIKEY"])
