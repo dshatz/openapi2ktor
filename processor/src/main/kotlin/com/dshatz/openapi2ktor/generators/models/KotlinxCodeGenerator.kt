@@ -129,6 +129,11 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
                 }.flatten().map {
                     it.updateName(it.propertySpec.name.safePropName())
                 }
+            val additionalPropsParam = ParameterSpec.builder("additionalProps", MUTABLE_MAP.parameterizedBy(STRING, ANY))
+                .defaultValue(CodeBlock.of("mutableMapOf()")).build()
+            val additionalPropsProp = PropertySpec.builder("additionalProps", MUTABLE_MAP.parameterizedBy(STRING, ANY))
+                .initializer("additionalProps")
+                .addAnnotation(Transient::class).build()
 
             if (!interfacesForOneOf.isNullOrEmpty()) {
                 typeSpecBuilder.addSuperinterfaces(interfacesForOneOf.map { it.typeName.copy(nullable = false) })
@@ -144,6 +149,8 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
                 constructorBuilder.addParameter(param)
                 typeSpecBuilder.addProperty(prop)
             }
+            typeSpecBuilder.addProperty(additionalPropsProp)
+            constructorBuilder.addParameter(additionalPropsParam)
 
             typeSpecBuilder
                 .primaryConstructor(constructorBuilder.build())
