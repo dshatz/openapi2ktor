@@ -44,7 +44,7 @@ sealed class SecurityScheme() {
 @JsonClassDiscriminator("scheme")
 sealed class Http(): SecurityScheme() {
     @SerialName("bearer")
-    data class Bearer(val bearerFormat: String, override val description: String): Http() {
+    data class Bearer(val bearerFormat: String, override val description: String = ""): Http() {
         override fun generateSetter(name: String): FunSpec {
             return FunSpec.builder("set${name.capitalize()}")
                 .addParameter(ParameterSpec.builder("bearer", String::class.asTypeName()).build())
@@ -57,7 +57,7 @@ sealed class Http(): SecurityScheme() {
     }
 
     @SerialName("basic")
-    class Basic(override val description: String) : Http() {
+    class Basic(override val description: String = "") : Http() {
         override fun generateSetter(name: String): FunSpec {
             return FunSpec.builder("set${name.capitalize()}")
                 .addParameter(ParameterSpec.builder("username", String::class.asTypeName()).build())
@@ -72,7 +72,7 @@ sealed class Http(): SecurityScheme() {
 }
 
 @Serializable
-data class OAuth(override val description: String, val flows: Map<String, OAuthFlow>): SecurityScheme() {
+data class OAuth(override val description: String = "", val flows: Map<String, OAuthFlow>): SecurityScheme() {
     override fun generateSetter(name: String): FunSpec {
         return FunSpec.builder("set${name.capitalize()}").build()
         // TODO
@@ -94,7 +94,7 @@ data class OAuth(override val description: String, val flows: Map<String, OAuthF
 data class ApiKey(
     @SerialName("in") val where: In,
     val name: String,
-    override val description: String
+    override val description: String = ""
 ): SecurityScheme() {
     override fun generateSetter(name: String): FunSpec {
         return FunSpec.builder("set${name.capitalize()}")

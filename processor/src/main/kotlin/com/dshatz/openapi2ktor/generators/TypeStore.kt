@@ -62,7 +62,8 @@ class TypeStore {
     ) {
         enum class ParamLocation {
             QUERY,
-            PATH
+            PATH,
+            HEADER
         }
     }
 

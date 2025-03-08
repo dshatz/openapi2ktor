@@ -1,4 +1,5 @@
 import com.example.client.BaseClient
+import com.example.client.Servers
 import io.ktor.client.call.*
 import io.ktor.client.plugins.*
 import io.ktor.client.request.*
@@ -8,11 +9,18 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+import io.ktor.client.engine.*
+import io.ktor.client.*
 import kotlinx.serialization.serializer
 
 class OrdersApiClient(
-    private val apiClient: BaseClient
-) {
+    engine: HttpClientEngine, baseUrl: String = Servers.API_EXAMPLE_COM.url, config: HttpClientConfig<*>.() -> Unit = {}
+): BaseClient(engine, config = {
+    defaultRequest {
+        url(baseUrl)
+    }
+    config()
+}) {
 
     /**
      * @param limit - required (query)
@@ -24,7 +32,7 @@ class OrdersApiClient(
             "a" to 1
         )
         try {
-            val response = apiClient.httpClient.get("/orders") {
+            val response = httpClient.get("/orders") {
                 url {
                     encodedPathSegments = encodedPathSegments.map {
                         pathParams[it]?.toString() ?: it

@@ -26,12 +26,13 @@ fun main() {
 
 data class EntryPoint(
     val apiFile: String,
-    val logger: KSPLogger? = null
+    val logger: KSPLogger? = null,
+    val basePackage: String = "com.example"
 ) {
     fun run(): Pair<List<FileSpec>, List<IClientGenerator.Template>> {
         val parser = Parser()
         val api = parser.fromFile(Path.of(apiFile))
-        val packages = Packages("com.example")
+        val packages = Packages(basePackage)
         if (api != null) {
             val typeStore = TypeStore()
             val modelGen = OpenApiAnalyzer(typeStore, packages)

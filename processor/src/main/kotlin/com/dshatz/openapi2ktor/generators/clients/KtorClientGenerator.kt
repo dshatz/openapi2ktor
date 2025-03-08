@@ -23,6 +23,8 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
     private val baseApiClientType = ClassName(packages.client, "BaseClient")
     private val addOptionalParamHelper = MemberName(packages.client, "addOptionalParam")
     private val addRequiredParamHelper = MemberName(packages.client, "addRequiredParam")
+    private val addOptionalHeaderParamHelper = MemberName(packages.client, "addOptionalHeaderParam")
+    private val addRequiredHeaderParamHelper = MemberName(packages.client, "addRequiredHeaderParam")
     private val addPathParamHelper = MemberName(packages.client, "replacePathParams")
     private lateinit var securitySchemes: Map<String, SecurityScheme>
 
@@ -194,10 +196,12 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                                 }.build()))
                             .apply {
                                 // Add query params
-                                paramSpecs.filter { it.key.where == ParamLocation.QUERY }.forEach { (paramInfo, paramSpec) ->
+                                paramSpecs.filter { it.key.where == ParamLocation.QUERY || it.key.where == ParamLocation.HEADER }.forEach { (paramInfo, paramSpec) ->
                                     if (paramInfo.isRequired) {
-                                        addStatement("%M(%S, %N)", addRequiredParamHelper, paramInfo.name, paramSpec.name)
+                                        val helper = if (paramInfo.where == ParamLocation.QUERY) addRequiredParamHelper else addRequiredHeaderParamHelper
+                                        addStatement("%M(%S, %N)", helper, paramInfo.name, paramSpec.name)
                                     } else {
+                                        val helper = if (paramInfo.where == ParamLocation.QUERY) addOptionalParamHelper else addOptionalHeaderParamHelper
                                         addStatement("%M(%S, %N, %L)", addOptionalParamHelper, paramInfo.name, paramSpec.name, paramInfo.type.resolveClassName().isNullable)
                                     }
                                 }

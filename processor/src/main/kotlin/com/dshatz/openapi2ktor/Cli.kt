@@ -12,10 +12,11 @@ object Cli {
         val parser = ArgParser("openapi2ktor")
         val openapiFile by parser.option(ArgType.String, shortName = "i", description = "Input OpenAPI3 spec file").required()
         val outputDir by parser.option(ArgType.String, shortName = "o", description = "Output directory").default("build/generated")
+        val basePackage by parser.option(ArgType.String, shortName = "b", description = "Base package").default("com.example")
         parser.parse(args)
 
         val basePath = File(outputDir).resolve("src/main/kotlin")
-        val (fileSpecs, templates) = EntryPoint(openapiFile).run()
+        val (fileSpecs, templates) = EntryPoint(openapiFile, basePackage = basePackage).run()
         fileSpecs.forEach {
             it.writeTo(basePath)
         }

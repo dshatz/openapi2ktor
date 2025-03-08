@@ -42,7 +42,8 @@ interface IGenerator {
     }
 
     fun Type.defaultValue(default: Any): CodeBlock {
-        return when (this.makeTypeName().copy(nullable = false)) {
+        val concreteType = this.makeTypeName().copy(nullable = false)
+        return when (concreteType) {
             String::class.asTypeName() -> CodeBlock.of("%S", default)
             Type.WithTypeName.Enum::class.asTypeName() -> CodeBlock.of("enumval")
             JsonPrimitive::class.asTypeName() -> default.makeDefaultPrimitive()!!.makeCodeBlock()
@@ -59,6 +60,8 @@ interface IGenerator {
                     )
                 }
             }
+            Float::class.asTypeName() -> CodeBlock.of("%Lf", default)
+            Double::class.asTypeName() -> CodeBlock.of("%L", String.format("%.02f", default))
             else -> CodeBlock.of("%L", default)
         }
     }

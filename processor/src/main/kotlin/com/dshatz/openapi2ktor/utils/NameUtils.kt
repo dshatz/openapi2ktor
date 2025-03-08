@@ -197,7 +197,7 @@ fun String.safeEnumEntryName(): String {
 }
 
 fun JsonPrimitive.makeCodeBlock(): CodeBlock {
-    val template = if (isString) "%T(%S)" else "%T(%L)"
+    val template = if (isString) "%T(%S)" else  "%T(%L)"
     return CodeBlock.of(template, JsonPrimitive::class, contentOrNull)
 }
 

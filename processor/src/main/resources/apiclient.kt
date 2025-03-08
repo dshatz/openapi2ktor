@@ -55,8 +55,16 @@ fun <T> HttpRequestBuilder.addOptionalParam(name: String, value: T?, isNullable:
     if (value != null || isNullable) parameter(name, value)
 }
 
+fun <T> HttpRequestBuilder.addOptionalHeaderParam(name: String, value: T?, isNullable: Boolean) {
+    if (value != null || isNullable) header(name, value)
+}
+
 fun <T> HttpRequestBuilder.addRequiredParam(name: String, value: T?) {
     parameter(name, value)
+}
+
+fun <T> HttpRequestBuilder.addRequiredHeaderParam(name: String, value: T?) {
+    header(name, value)
 }
 
 fun String.replacePathParams(name: String, value: Any?, nullable: Boolean): String {

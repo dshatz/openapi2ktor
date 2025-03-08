@@ -112,6 +112,7 @@ open class OpenApiAnalyzer(
                 val where = when (param.`in`) {
                     "query" -> ParamLocation.QUERY
                     "path" -> ParamLocation.PATH
+                    "header" -> ParamLocation.HEADER
                     else -> error("What is this param location? ${param.`in`}")
                 }
                 TypeStore.OperationParam(param.name, paramType, param.isRequired, where)
