@@ -12,7 +12,7 @@ class NameUtilsTest {
     private lateinit var api: OpenApi3
     @BeforeTest
     fun init() {
-        api = OpenApiParser().parse(File("../e2e/polymorphism/src/test/resources/sample.yaml")) as OpenApi3
+        api = OpenApiParser().parse(File("../../e2e/polymorphism/src/test/resources/sample.yaml")) as OpenApi3
     }
 
     @Test

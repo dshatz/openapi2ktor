@@ -17,6 +17,8 @@ import kotlinx.serialization.json.JsonContentPolymorphicSerializer
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.serializer
+import kotlin.reflect.typeOf
 
 class SecuritySchemeSerializer: JsonContentPolymorphicSerializer<SecurityScheme>(SecurityScheme::class) {
     override fun selectDeserializer(element: JsonElement): DeserializationStrategy<SecurityScheme> {
@@ -38,6 +40,12 @@ sealed class SecurityScheme() {
         return CodeBlock.of("(authSchemes[%S] as ${generatedContainerName()})", name)
     }
     abstract fun generateApplicator(name: String): CodeBlock
+    companion object {
+        val headerMethod = MemberName("io.ktor.client.request", "header")
+        val cookieMethod = MemberName("io.ktor.client.request", "cookie")
+        val parameterMethod = MemberName("io.ktor.client.request", "parameter")
+        val bearerMethod =  MemberName("io.ktor.client.request", "bearerAuth")
+    }
 }
 
 @Serializable
@@ -52,7 +60,7 @@ sealed class Http(): SecurityScheme() {
         }
 
         override fun generateApplicator(name: String): CodeBlock {
-            return CodeBlock.of("%L?.bearer?.let { %M(it) }", generateAccessor(name), MemberName("io.ktor.client.request", "bearerAuth"))
+            return CodeBlock.of("%L?.bearer?.let { %M(it) }", generateAccessor(name), /*bearerMethod*/)
         }
     }
 
@@ -118,12 +126,6 @@ data class ApiKey(
         @SerialName("header") Header,
         @SerialName("query") Query,
         @SerialName("cookie") Cookie
-    }
-
-    companion object {
-        val headerMethod = MemberName("io.ktor.client.request", "header")
-        val cookieMethod = MemberName("io.ktor.client.request", "cookie")
-        val parameterMethod = MemberName("io.ktor.client.request", "parameter")
     }
 }
 

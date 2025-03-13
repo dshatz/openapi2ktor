@@ -5,10 +5,9 @@ plugins {
     kotlin("plugin.serialization")
     id("com.google.devtools.ksp")
     alias(libs.plugins.vanniktech.mavenPublish)
-    `java-gradle-plugin`
 }
 
-group = "com.dshatz"
+group = "com.dshatz.openapi2ktor"
 version = "1.0.0"
 
 dependencies {
@@ -24,19 +23,14 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:3.0.3")
     implementation("io.ktor:ktor-client-content-negotiation:3.0.3")
     implementation("io.ktor:ktor-serialization-kotlinx-json:3.0.3")
-    implementation("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.10")
 
 
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.0")
     testImplementation(kotlin("test"))
 }
 
-gradlePlugin {
-    // Define the plugin
-    val openapi2ktor by plugins.creating {
-        id = "com.dshatz.openapi2ktor.plugin"
-        implementationClass = "com.dshatz.openapi2ktor.plugin.Plugin"
-    }
+kotlin {
+    jvmToolchain(17)
 }
 
 mavenPublishing {

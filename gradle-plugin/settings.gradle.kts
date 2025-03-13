@@ -7,11 +7,11 @@ pluginManagement {
     }
 
     plugins {
-        kotlin("jvm").version(extra["kotlin.version"] as String) apply false
+        kotlin("jvm").version("2.1.10") apply false
+        id("com.google.devtools.ksp") version "2.1.10-1.0.30" apply false
         kotlin("plugin.serialization") version "2.1.10" apply false
     }
 }
-
 
 dependencyResolutionManagement {
     repositories {
@@ -19,12 +19,13 @@ dependencyResolutionManagement {
         maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
         google()
     }
+
+    versionCatalogs {
+        create("libs") {
+            from(files("../gradle/libs.versions.toml"))
+        }
+    }
 }
-rootProject.name = "openapi2ktor"
-include(":e2e:polymorphism")
-include(":e2e:binance")
-include(":e2e:github")
 
-includeBuild("gradle-plugin")
-
-
+include(":processor")
+include(":plugin")

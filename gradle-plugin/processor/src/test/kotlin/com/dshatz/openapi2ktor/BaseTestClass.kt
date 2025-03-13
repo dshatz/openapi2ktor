@@ -5,7 +5,7 @@ import com.reprezen.kaizen.oasparser.model3.OpenApi3
 import java.io.File
 import kotlin.test.BeforeTest
 
-open class BaseTestClass(private val apiFile: String = "../e2e/polymorphism/src/test/resources/sample.yaml") {
+open class BaseTestClass(private val apiFile: String = "../../e2e/polymorphism/src/test/resources/sample.yaml") {
 
 
     protected lateinit var api: OpenApi3

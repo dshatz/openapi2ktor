@@ -1,8 +1,11 @@
 [versions]
 ktor = "3.0.3"
+kotlin = "2.1.10"
 
 [plugins]
 vanniktech-mavenPublish = { id = "com.vanniktech.maven.publish", version = "0.29.0" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+local-plugin = { id = "com.dshatz.openapi2ktor.plugin", version = "*" }
 
 [libraries]
 ktor-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }

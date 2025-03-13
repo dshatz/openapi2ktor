@@ -2,12 +2,6 @@ import com.denisbrandi.netmock.Method
 import com.denisbrandi.netmock.NetMockRequest
 import com.denisbrandi.netmock.NetMockResponseBuilder
 import com.denisbrandi.netmock.engine.NetMockEngine
-import com.example.client.BaseClient
-import com.example.client.orders.OrdersClient
-import com.example.client.users.UsersClient
-import com.example.models.components.parameters.UserTypeParam
-import com.example.models.components.schemas.AdminUser.AdminUser
-import com.example.models.paths.users.get.response.GetUsersResponse200
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals

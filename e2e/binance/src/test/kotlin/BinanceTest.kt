@@ -1,8 +1,6 @@
-import com.example.client.BaseClient
-import com.example.client.HttpResult
-import com.example.client.Servers
-import com.example.client.api.ApiClient
-import com.example.models.paths.api.v3.avgPrice.get.response.GetApiV3AvgPriceResponse400
+import binance.client.HttpResult
+import binance.client.api.ApiClient
+import binance.models.paths.api.v3.avgPrice.get.response.GetApiV3AvgPriceResponse400
 import io.ktor.client.engine.cio.*
 import io.ktor.client.engine.mock.*
 import io.ktor.client.plugins.*
