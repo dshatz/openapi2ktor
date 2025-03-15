@@ -26,7 +26,11 @@ class ResponseUniquenessTest {
         analyzer = TestAnalyzer(typeStore, packages)
     }
 
-    private class TestAnalyzer(typeStore: TypeStore, packages: Packages): OpenApiAnalyzer(typeStore, packages) {
+    private class TestAnalyzer(typeStore: TypeStore, packages: Packages): OpenApiAnalyzer(
+        outputDir,
+        typeStore,
+        packages
+    ) {
         var onCalled: ((pathString: String, verb: String, success: Boolean, willWrap: Boolean) -> Unit)? = null
 
         override suspend fun processPathResponse(

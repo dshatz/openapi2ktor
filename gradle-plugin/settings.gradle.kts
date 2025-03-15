@@ -8,8 +8,10 @@ pluginManagement {
 
     plugins {
         kotlin("jvm").version("2.1.10") apply false
+        kotlin("multiplatform").version("2.1.10") apply false
         id("com.google.devtools.ksp") version "2.1.10-1.0.30" apply false
         kotlin("plugin.serialization") version "2.1.10" apply false
+        id("com.android.library") version "8.2.2" apply false
     }
 }
 
@@ -29,3 +31,4 @@ dependencyResolutionManagement {
 
 include(":processor")
 include(":plugin")
+include(":runtime")

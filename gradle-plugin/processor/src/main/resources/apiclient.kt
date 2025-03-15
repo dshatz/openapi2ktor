@@ -1,5 +1,12 @@
 package {{ client }}
 
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.elementNames
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.encodeToJsonElement
+
 import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.http.*
@@ -81,4 +88,25 @@ fun <T> HttpRequestBuilder.addRequiredHeaderParam(name: String, value: T?) {
 fun String.replacePathParams(name: String, value: Any?, nullable: Boolean): String {
     return if (value == null && !nullable) this
     else this.replace("{${name}}", value.toString().encodeURLPathPart())
+}
+
+fun processAdditionalProps(serialDescriptor: SerialDescriptor, json: String): JsonElement {
+    val element = Json.parseToJsonElement(json)
+    val definedNames = serialDescriptor.elementNames
+    val props = mutableMapOf<String, JsonElement>()
+    val finalData = if (element is JsonObject) {
+        for (propName in element.keys) {
+            if (propName !in definedNames) {
+                props[propName] = element[propName]!!
+            }
+        }
+        if (props.isNotEmpty()) {
+            JsonObject(element.toMutableMap().apply {
+                put("additionalProps", Json.encodeToJsonElement(props.toMap()))
+            })
+        } else {
+            element
+        }
+    } else element
+    return finalData
 }

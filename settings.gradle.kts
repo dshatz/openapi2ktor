@@ -8,7 +8,7 @@ pluginManagement {
 
     plugins {
         kotlin("jvm").version(extra["kotlin.version"] as String) apply false
-        kotlin("plugin.serialization") version "2.1.10" apply false
+        kotlin("plugin.serialization") version(extra["kotlin.version"] as String) apply false
     }
 }
 

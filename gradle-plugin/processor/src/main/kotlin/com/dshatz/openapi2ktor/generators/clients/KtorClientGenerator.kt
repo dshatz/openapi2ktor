@@ -29,7 +29,8 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
     private val unknownSuccessException = ClassName(packages.client, "UnknownSuccessCodeError")
     private val unknownErrorException = ClassName(packages.client, "OpenAPIResponseError")
     private val ktorBodyMethod = MemberName("io.ktor.client.call", "body")
-    val libResultClass = ClassName(packages.client, "HttpResult")
+    private val additionalPropsHelper = MemberName(packages.client, "processAdditionalProps")
+    private val libResultClass = ClassName(packages.client, "HttpResult")
 
     private lateinit var securitySchemes: Map<String, SecurityScheme>
     private var globalSecurityRequirements: List<String> = emptyList()

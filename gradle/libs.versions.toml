@@ -1,13 +1,18 @@
 [versions]
+kotlinxSerializationJson = "1.8.0"
 ktor = "3.0.3"
 kotlin = "2.1.10"
 
 [plugins]
 vanniktech-mavenPublish = { id = "com.vanniktech.maven.publish", version = "0.29.0" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+serial = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 local-plugin = { id = "com.dshatz.openapi2ktor.plugin", version = "*" }
+android-lib = { id = "com.android.library", version = "8.2.2" }
 
 [libraries]
+serial = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 ktor-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
 ktor-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
 ktor-contentnegotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }

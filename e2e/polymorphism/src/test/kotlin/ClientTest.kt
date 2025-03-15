@@ -3,6 +3,11 @@ import com.denisbrandi.netmock.NetMockRequest
 import com.denisbrandi.netmock.NetMockResponseBuilder
 import com.denisbrandi.netmock.engine.NetMockEngine
 import kotlinx.coroutines.test.runTest
+import sample.client.orders.OrdersClient
+import sample.client.users.UsersClient
+import sample.models.components.parameters.UserTypeParam
+import sample.models.components.schemas.AdminUser.AdminUser
+import sample.models.paths.users.get.response.GetUsersResponse200
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -18,7 +23,7 @@ class ClientTest {
             null
         """.trimIndent())
 
-        users.getByName("alice").getOrNull().also {
+        users.getByName("alice").dataOrNull().also {
             assertNull(it)
         }
 
@@ -38,7 +43,7 @@ class ClientTest {
             ]
         """.trimIndent())
 
-        users.get(10).getOrNull().also {
+        users.get(10).dataOrNull().also {
             val data = assertIs<GetUsersResponse200>(it).get()
             assertEquals(3, data.size)
             assertIs<AdminUser>(data[1])

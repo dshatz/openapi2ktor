@@ -1,5 +1,3 @@
-import com.example.client.BaseClient
-import com.example.client.Servers
 import io.ktor.client.call.*
 import io.ktor.client.plugins.*
 import io.ktor.client.request.*
@@ -12,6 +10,8 @@ import kotlinx.serialization.encoding.Encoder
 import io.ktor.client.engine.*
 import io.ktor.client.*
 import kotlinx.serialization.serializer
+import sample.client.BaseClient
+import sample.client.Servers
 
 class OrdersApiClient(
     engine: HttpClientEngine, baseUrl: String = Servers.API_EXAMPLE_COM.url, config: HttpClientConfig<*>.() -> Unit = {}

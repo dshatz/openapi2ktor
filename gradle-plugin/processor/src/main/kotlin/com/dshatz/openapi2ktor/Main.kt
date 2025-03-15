@@ -4,12 +4,11 @@ import com.dshatz.openapi2ktor.generators.TypeStore
 import com.dshatz.openapi2ktor.generators.analyze.OpenApiAnalyzer
 import com.dshatz.openapi2ktor.generators.clients.IClientGenerator
 import com.dshatz.openapi2ktor.utils.Packages
-import com.google.devtools.ksp.processing.KSPLogger
 import com.squareup.kotlinpoet.FileSpec
-import java.io.File
+import java.io.Serializable
 import java.nio.file.Path
 
-fun main() {
+/*fun main() {
     val outputDir = "build/generated";
     val (fileSpecs, templates) = EntryPoint("e2e/src/test/resources/sample.yaml").run()
     val basePath = File(outputDir).resolve("src/main/kotlin")
@@ -21,18 +20,18 @@ fun main() {
             .resolve(it.name + ".kt")
         path.writeText(it.contents)
     }
-}
+}*/
 
 
 data class EntryPoint(
     val apiFile: String,
-    val logger: KSPLogger? = null,
-    val basePackage: String = "com.example"
+    val outputDir: String,
+    val config: GeneratorConfig
 ) {
     fun run(): Pair<List<FileSpec>, List<IClientGenerator.Template>> {
         val parser = Parser()
         val api = parser.fromFile(Path.of(apiFile))
-        val packages = Packages(basePackage)
+        val packages = Packages(config.basePackage)
         if (api != null) {
             val typeStore = TypeStore()
             val modelGen = OpenApiAnalyzer(typeStore, packages)
@@ -41,4 +40,11 @@ data class EntryPoint(
     }
 }
 
+interface GeneratorConfig: Serializable {
+    val additionalPropsConfig: AdditionalPropsConfig
+    val basePackage: String
+}
 
+interface AdditionalPropsConfig: Serializable {
+    val additionalPropPatterns: List<String>
+}

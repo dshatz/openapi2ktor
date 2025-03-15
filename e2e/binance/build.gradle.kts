@@ -17,7 +17,9 @@ dependencies {
 }
 
 openapi3 {
-    addGenerator("binance") {
-        inputSpec.set(layout.projectDirectory.file("src/test/resources/spot_api.yaml"))
+    generators {
+        create("binance") {
+            inputSpec.set(layout.projectDirectory.file("src/test/resources/spot_api.yaml"))
+        }
     }
 }

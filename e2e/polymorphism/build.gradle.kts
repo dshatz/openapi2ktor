@@ -15,8 +15,9 @@ dependencies {
 }
 
 openapi3 {
-    /*addGenerator("simple") {
-        *//*openApiFilePath = "src/test/resources/sample.yaml"
-        basePackageName = "com.example.sample"*//*
-    }*/
+    generators {
+        create("sample") {
+            inputSpec.set(layout.projectDirectory.file("src/test/resources/sample.yaml"))
+        }
+    }
 }

@@ -27,7 +27,7 @@ class AnalyzerTest: BaseTestClass() {
     override fun init() {
         super.init()
         typeStore = TypeStore()
-        analyzer = OpenApiAnalyzer(typeStore, packages)
+        analyzer = OpenApiAnalyzer(outputDir, typeStore, packages)
     }
 
     private fun ObjectAssertScope.assertUser() {
