@@ -1,5 +1,6 @@
 package com.dshatz.openapi2ktor.generators.models
 
+import com.dshatz.openapi2ktor.GeneratorConfig
 import com.dshatz.openapi2ktor.generators.Type
 import com.dshatz.openapi2ktor.generators.TypeStore
 import com.dshatz.openapi2ktor.utils.*
@@ -11,7 +12,14 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.*
 
-class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packages: Packages): IModelGenerator {
+class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packages: Packages, private val config: GeneratorConfig): IModelGenerator {
+
+    private val nullableOnSerializer = MemberName("kotlinx.serialization.builtins", "nullable", true)
+    private val withAdditionalPropsInterface = ClassName(packages.client, "WithAdditionalProps")
+    private val additionalPropsPropSpec = PropertySpec.builder(
+        "additionalProps",
+        MAP.parameterizedBy(String::class.asTypeName(), JsonElement::class.asTypeName()),
+        KModifier.OVERRIDE).initializer("emptyMap()").build()
 
     internal lateinit var responseMappings: ResponseInterfaceResult
 
@@ -35,8 +43,15 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
 
         val serializerClassname = ClassName(className.packageName, className.simpleName + "Serializer")
 
+        val usedInResponse = typeStore.isUsedInResponse(wrapper)
         val typeSpec = TypeSpec.classBuilder(className)
             .addSuperinterface(ClassName(packages.client, "Wrapper").parameterizedBy(wrappedType))
+            .apply {
+                if (usedInResponse != null && usedInResponse.any { config.additionalPropsConfig.matches(it) }) {
+                    addSuperinterface(withAdditionalPropsInterface)
+                    addProperty(additionalPropsPropSpec)
+                }
+            }
             .addModifiers(KModifier.DATA)
             .addAnnotation(AnnotationSpec.builder(Serializable::class)
                 .addMember("%T::class", serializerClassname).build())
@@ -115,6 +130,8 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
 
             val propsParams = type.props.entries.map { type.makeDataClassProps(typeStore, it.key, it.value) }
 
+            val usedInResponse = typeStore.isUsedInResponse(type)
+
             val uniqueProps = propsParams
                 .groupBy { it.propertySpec.name.lowercase() }
                 .entries
@@ -129,14 +146,15 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
                 }.flatten().map {
                     it.updateName(it.propertySpec.name.safePropName())
                 }
-            val additionalPropsParam = ParameterSpec.builder("additionalProps", MUTABLE_MAP.parameterizedBy(STRING, ANY))
-                .defaultValue(CodeBlock.of("mutableMapOf()")).build()
-            val additionalPropsProp = PropertySpec.builder("additionalProps", MUTABLE_MAP.parameterizedBy(STRING, ANY))
-                .initializer("additionalProps")
-                .addAnnotation(Transient::class).build()
 
             if (!interfacesForOneOf.isNullOrEmpty()) {
                 typeSpecBuilder.addSuperinterfaces(interfacesForOneOf.map { it.typeName.copy(nullable = false) })
+                if (interfacesForOneOf.any {
+                    val usedInResponse = typeStore.isUsedInResponse(it)
+                    usedInResponse != null && usedInResponse.any { config.additionalPropsConfig.matches(it) }
+                }) {
+                    typeSpecBuilder.addProperty(additionalPropsPropSpec)
+                }
             }
 
             responseMappings.responseSuperclasses[type]?.let {
@@ -149,11 +167,15 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
                 constructorBuilder.addParameter(param)
                 typeSpecBuilder.addProperty(prop)
             }
-            typeSpecBuilder.addProperty(additionalPropsProp)
-            constructorBuilder.addParameter(additionalPropsParam)
 
             typeSpecBuilder
                 .primaryConstructor(constructorBuilder.build())
+                .apply {
+                    if (usedInResponse != null && usedInResponse.any { config.additionalPropsConfig.matches(it) }) {
+                        addSuperinterface(withAdditionalPropsInterface)
+                        typeSpecBuilder.addProperty(additionalPropsPropSpec)
+                    }
+                }
                 .addModifiers(KModifier.DATA)
                 .apply {
                     type.description?.let { addKdoc(type.description.toCodeBlock(::findConcreteType)) }
@@ -200,18 +222,25 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
             }
 
 
-        return polymorphicSerializers.map { (superType, serializer) ->
-            val serializerClass = serializer.first
-            val serializerSpec = serializer.second
+        return polymorphicSerializers.map { (superType, serializers) ->
+            val nullableSerializer = serializers.entries.find { it.key.simpleName.endsWith("Nullable") }
+            val nonNullSerializer = serializers.entries.find { !it.key.simpleName.endsWith("Nullable") }!!
+            val serializer = nullableSerializer ?: nonNullSerializer
+            val serializerClass = serializer.key
             val className = superType.typeName as ClassName
             val fileSpec = FileSpec.builder(className)
+            val usedInResponse = typeStore.isUsedInResponse(superType)
             val typeSpec = TypeSpec.interfaceBuilder(className)
                 .addAnnotation(AnnotationSpec.builder(Serializable::class).addMember("%T::class", serializerClass).build())
                 .apply {
                     superType.description?.let { addKdoc(it.toCodeBlock(::findConcreteType)) }
                 }
+            if (usedInResponse != null && usedInResponse.any { config.additionalPropsConfig.matches(it) }){
+                typeSpec.addSuperinterface(withAdditionalPropsInterface)
+            }
             fileSpec.addType(typeSpec.build())
-            fileSpec.addType(serializerSpec)
+            fileSpec.addType(nonNullSerializer.value)
+            nullableSerializer?.let { fileSpec.addType(it.value) }
             fileSpec.build()
         }
     }
@@ -357,7 +386,7 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
             }.toMap()
     }
 
-    private fun customPolymorphicSerializer(superType: Type.WithTypeName.OneOf): Pair<ClassName, TypeSpec> {
+    private fun customPolymorphicSerializer(superType: Type.WithTypeName.OneOf): Map<ClassName, TypeSpec> {
         val superClassName = (superType.typeName.copy(nullable = false) as ClassName)
         val serializerName = ClassName(
             packageName = superClassName.packageName,
@@ -386,11 +415,47 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
             .addCode(chooseSerializerCode)
             .build()
 
-        return serializerName to TypeSpec.classBuilder(serializerName)
+        val nonNullSerializer = serializerName to TypeSpec.objectBuilder(serializerName)
             .superclass(JsonContentPolymorphicSerializer::class.asClassName().parameterizedBy(superClassName))
             .addSuperclassConstructorParameter("%T::class", superClassName)
             .addFunction(function)
             .build()
+
+        val nullableSerializer = if (anyNullable) {
+            val nullableClass = superClassName.copy(nullable = true)
+            val serializerClass = serializerName.updateSimpleName { it + "Nullable" }
+            serializerClass to TypeSpec.classBuilder(serializerClass)
+                .addSuperinterface(KSerializer::class.asTypeName().parameterizedBy(nullableClass))
+                .addProperty(
+                    PropertySpec.builder("delegate", KSerializer::class.asTypeName().parameterizedBy(nullableClass))
+                        .initializer(CodeBlock.of("%T.%M", nonNullSerializer.first, nullableOnSerializer)).build()
+                )
+                .addProperty(
+                    PropertySpec.builder("descriptor", SerialDescriptor::class, KModifier.OVERRIDE)
+                        .initializer("delegate.descriptor").build()
+                )
+                .addFunction(
+                    FunSpec.builder("deserialize")
+                        .addModifiers(KModifier.OVERRIDE)
+                        .addParameter(ParameterSpec.builder("decoder", Decoder::class).build())
+                        .returns(nullableClass)
+                        .addCode("return delegate.deserialize(decoder)")
+                        .build()
+                )
+                .addFunction(
+                    FunSpec.builder("serialize")
+                        .addModifiers(KModifier.OVERRIDE)
+                        .addParameter(
+                            ParameterSpec.builder("encoder", Encoder::class).build()
+                        )
+                        .addParameter(
+                            ParameterSpec.builder("value", nullableClass).build()
+                        )
+                        .addCode("delegate.serialize(encoder, value)")
+                        .build()
+                ).build()
+        } else null
+        return listOfNotNull(nonNullSerializer, nullableSerializer).toMap()
     }
 
     companion object {

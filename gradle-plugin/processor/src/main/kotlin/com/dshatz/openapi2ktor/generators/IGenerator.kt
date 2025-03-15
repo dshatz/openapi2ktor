@@ -24,12 +24,7 @@ interface IGenerator {
     }
 
     fun <T: Type> findConcreteType(type: T): Type.WithTypeName? {
-        return when (type) {
-            is Type.WithTypeName -> type
-            is Type.Reference -> findConcreteType(typeStore.resolveReference(type.jsonReference))
-            is Type.List -> null
-            is Type.SimpleType -> null
-        }
+        return typeStore.findConcreteType(type)
     }
 
     fun Type.nullableIfNoDefault(isRequired: Boolean, default: CodeBlock?): TypeName {

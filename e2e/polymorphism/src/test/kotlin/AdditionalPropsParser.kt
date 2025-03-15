@@ -12,10 +12,9 @@ internal val testJson = """
 """.trimIndent()
 
 
-open class PropsSerializer<T: WithAdditionalProps>(private val baseSerializer: KSerializer<T>): JsonTransformingSerializer<T>(baseSerializer) {
+open class PropsSerializer<T: Any>(private val baseSerializer: KSerializer<T>): JsonTransformingSerializer<T>(baseSerializer) {
     override val descriptor: SerialDescriptor = baseSerializer.descriptor
 
-    @OptIn(InternalSerializationApi::class)
     override fun transformDeserialize(element: JsonElement): JsonElement {
         val additionalProps = mutableMapOf<String, JsonElement>()
         val modelNames = baseSerializer.descriptor.elementNames

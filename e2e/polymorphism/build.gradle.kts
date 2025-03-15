@@ -18,6 +18,11 @@ openapi3 {
     generators {
         create("sample") {
             inputSpec.set(layout.projectDirectory.file("src/test/resources/sample.yaml"))
+            config {
+                parseUnknownProps {
+                    urlStartsWith("/users")
+                }
+            }
         }
     }
 }

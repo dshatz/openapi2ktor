@@ -2,33 +2,27 @@ package {{ client }}
 
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.elementNames
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.encodeToJsonElement
-
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.json.*
 import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.util.*
 import io.ktor.client.engine.*
 import io.ktor.client.plugins.contentnegotiation.*
-import io.ktor.client.plugins.ClientRequestException
-import io.ktor.client.plugins.RedirectResponseException
-import io.ktor.client.plugins.ServerResponseException
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.client.statement.*
 
-open class BaseClient(engine: HttpClientEngine, config: HttpClientConfig<*>.() -> Unit = {}) {
+open class BaseClient(engine: HttpClientEngine, protected val json: Json, config: HttpClientConfig<*>.() -> Unit = {}) {
     internal val httpClient = HttpClient(engine) {
         expectSuccess = true
         install(ContentNegotiation) {
-            json()
+            json(json)
         }
         config()
     }
 
-    constructor(engine: HttpClientEngineFactory<*>, config: HttpClientConfig<*>.() -> Unit = {}): this(engine.create(), config)
+    constructor(engine: HttpClientEngineFactory<*>, json: Json, config: HttpClientConfig<*>.() -> Unit = {}): this(engine.create(), json, config)
 
 }
 
@@ -90,23 +84,26 @@ fun String.replacePathParams(name: String, value: Any?, nullable: Boolean): Stri
     else this.replace("{${name}}", value.toString().encodeURLPathPart())
 }
 
-fun processAdditionalProps(serialDescriptor: SerialDescriptor, json: String): JsonElement {
-    val element = Json.parseToJsonElement(json)
-    val definedNames = serialDescriptor.elementNames
-    val props = mutableMapOf<String, JsonElement>()
-    val finalData = if (element is JsonObject) {
-        for (propName in element.keys) {
-            if (propName !in definedNames) {
-                props[propName] = element[propName]!!
+open class PropsSerializer<T: WithAdditionalProps>(private val baseSerializer: KSerializer<T>): JsonTransformingSerializer<T>(baseSerializer) {
+    override val descriptor: SerialDescriptor = baseSerializer.descriptor
+
+    override fun transformDeserialize(element: JsonElement): JsonElement {
+        val additionalProps = mutableMapOf<String, JsonElement>()
+        val modelNames = baseSerializer.descriptor.elementNames
+        return if (element is JsonObject) {
+            element.forEach { (key, value) ->
+                if (key !in modelNames) {
+                    additionalProps[key] = value
+                }
             }
-        }
-        if (props.isNotEmpty()) {
             JsonObject(element.toMutableMap().apply {
-                put("additionalProps", Json.encodeToJsonElement(props.toMap()))
+                put("additionalProps", JsonObject(additionalProps))
             })
-        } else {
-            element
         }
-    } else element
-    return finalData
+        else return element
+    }
+}
+
+interface WithAdditionalProps {
+    val additionalProps: Map<String, JsonElement>
 }

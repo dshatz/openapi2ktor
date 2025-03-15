@@ -34,7 +34,7 @@ data class EntryPoint(
         val packages = Packages(config.basePackage)
         if (api != null) {
             val typeStore = TypeStore()
-            val modelGen = OpenApiAnalyzer(typeStore, packages)
+            val modelGen = OpenApiAnalyzer(typeStore, packages, config)
             return modelGen.generate(api)
         } else error("Api is null")
     }

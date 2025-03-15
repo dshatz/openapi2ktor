@@ -9,13 +9,19 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import io.ktor.client.engine.*
 import io.ktor.client.*
+import io.ktor.util.reflect.*
+import io.ktor.utils.io.*
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.io.decodeFromSource
 import kotlinx.serialization.serializer
 import sample.client.BaseClient
+import sample.client.PropsSerializer
 import sample.client.Servers
+import sample.models.components.schemas.UserOrAdmin.UserOrAdmin
 
 class OrdersApiClient(
-    engine: HttpClientEngine, baseUrl: String = Servers.API_EXAMPLE_COM.url, config: HttpClientConfig<*>.() -> Unit = {}
-): BaseClient(engine, config = {
+    engine: HttpClientEngine, baseUrl: String = Servers.API_EXAMPLE_COM.url, json: Json = Json { ignoreUnknownKeys = true }, config: HttpClientConfig<*>.() -> Unit = {}
+): BaseClient(engine, json, config = {
     defaultRequest {
         url(baseUrl)
     }
@@ -41,6 +47,7 @@ class OrdersApiClient(
 //                this.addRequiredParam("limit", limit)
 //                this.addOptionalParam("optional_param", optionalParam, false)
             }
+            val s203 = object: PropsSerializer<UserOrAdmin>(UserOrAdmin.serializer()) {}
             val result: IResponse = when (response.status.value) {
                 200 -> response.body<Response200>()
                 201 -> response.body<Response201>()

@@ -1,5 +1,6 @@
 package com.dshatz.openapi2ktor.generators.analyze
 
+import com.dshatz.openapi2ktor.GeneratorConfig
 import com.dshatz.openapi2ktor.generators.Type
 import com.dshatz.openapi2ktor.generators.clients.KtorClientGenerator
 import com.dshatz.openapi2ktor.generators.models.KotlinxCodeGenerator
@@ -26,10 +27,11 @@ import kotlin.time.measureTime
 open class OpenApiAnalyzer(
     private val typeStore: TypeStore,
     private val packages: Packages,
+    private val config: GeneratorConfig
 ) {
 
-    private val modelGenerator = KotlinxCodeGenerator(typeStore, packages)
-    private val clientGenerator = KtorClientGenerator(typeStore, packages)
+    private val modelGenerator = KotlinxCodeGenerator(typeStore, packages, config)
+    private val clientGenerator = KtorClientGenerator(typeStore, packages, config)
 
     fun generate(api: OpenApi3): Pair<List<FileSpec>, List<IClientGenerator.Template>> = runBlocking {
         val modelsTime = measureTime {
@@ -174,7 +176,6 @@ open class OpenApiAnalyzer(
                 else WrapMode.Exception
             } else WrapMode.None
             schema.makeType(modelName, jsonReference, referenceData = refData, wrapMode = mode).also {
-
                 typeStore.registerResponseMapping(TypeStore.PathId(pathString, verb), statusCode, ref?.target ?: jsonReference, it)
             }
         }

@@ -1,5 +1,8 @@
 package com.dshatz.openapi2ktor.utils
 
+import com.dshatz.openapi2ktor.AdditionalPropsConfig
+import com.dshatz.openapi2ktor.generators.TypeStore
+
 fun <T, K, V> Iterable<T>.associateByNotNull(
     keySelector: (T) -> K?,
     valueTransform: (T) -> V?,
@@ -35,4 +38,9 @@ fun <T, K> Sequence<T>.findDuplicates(by: (T) -> K): MutableMap<K, HashSet<T>> {
     }
 
     return duplicates
+}
+
+
+fun AdditionalPropsConfig.matches(pathId: TypeStore.PathId): Boolean {
+    return additionalPropPatterns.any { Regex(it).matches(pathId.pathString) }
 }

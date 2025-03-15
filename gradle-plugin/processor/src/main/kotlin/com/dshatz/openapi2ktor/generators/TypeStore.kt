@@ -18,6 +18,13 @@ class TypeStore {
     private val operationParameters: MutableMap<PathId, List<OperationParam>> = mutableMapOf()
     private val exceptionTypes: MutableSet<Type> = mutableSetOf()
 
+    private val typesUsedInResponses by lazy { responseMapping.asSequence()
+        .flatMap { it.value.values.map { type -> type to it.key } }
+        .groupBy { findConcreteType(it.first.type) }
+        .mapValues { it.value.map { it.second } } }
+
+
+
     fun registerType(jsonReference: String, type: Type) {
         println("Registering type! ${type.simpleName()}; ${jsonReference.cleanJsonReference()}")
         types[jsonReference.cleanJsonReference()] = type
@@ -36,6 +43,10 @@ class TypeStore {
         responseMapping[path] = map
     }
 
+    fun isUsedInResponse(type: Type): List<PathId>? {
+        return typesUsedInResponses[findConcreteType(type)]
+    }
+
     fun extendException(type: Type) {
         exceptionTypes.add(type)
     }
@@ -44,15 +55,22 @@ class TypeStore {
         return type in exceptionTypes
     }
 
-    data class PathId(val pathString: String, val verb: String) {
-        val pathId = verb.capitalize() + pathString.split("/").joinToString("") { it.capitalize() }
-    }
+    data class PathId(val pathString: String, val verb: String)
 
     fun resolveReference(jsonReference: String): Type {
         println("Resolving $jsonReference...")
         return getTypes()[jsonReference] ?: run {
             printTypes()
             error("Could not resolve reference $jsonReference")
+        }
+    }
+
+    fun <T: Type> findConcreteType(type: T): Type.WithTypeName? {
+        return when (type) {
+            is Type.WithTypeName -> type
+            is Type.Reference -> findConcreteType(resolveReference(type.jsonReference))
+            is Type.List -> null
+            is Type.SimpleType -> null
         }
     }
 

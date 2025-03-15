@@ -30,7 +30,7 @@ class Plugin : Plugin<Project> {
             extension.generators.names.all { generatorName ->
                 val generatorExtension = extension.generators.getByName(generatorName)
                 generatorExtension.setDefaultOutputDir(project.layout.buildDirectory.dir("openapi").get())
-                generatorExtension.config.convention(project.objects.newInstance(Generator.GeneratorConfigExtension::class.java, generatorExtension.name))
+                /*generatorExtension.config.convention(project.objects.newInstance(Generator.GeneratorConfigExtension::class.java, generatorExtension.name))*/
                 val task = project.tasks.register("generate${generatorExtension.name.capitalize()}Clients", GenerateTask::class.java) { task ->
                     task.group = "openapi3"
                     task.generatorConfig.set(generatorExtension.config.get().makeConfig())
@@ -74,10 +74,6 @@ abstract class GenerateTask: DefaultTask() {
      */
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
-
-    fun setDefaultOutputDir(buildDir: Directory) {
-        outputDir.convention(buildDir)
-    }
 
     @get:Input
     abstract val generatorConfig: Property<GeneratorConfig>
@@ -129,6 +125,7 @@ abstract class Generator @Inject constructor(
     }
 
     abstract class GeneratorConfigExtension @Inject constructor(objects: ObjectFactory, name: String) {
+        @get:Nested
         internal val additionalPropsConfig: Property<AdditionalPropsConfigExtension> = objects.property(AdditionalPropsConfigExtension::class.java)
         internal val basePackage: Property<String> = objects.property(String::class.java)
 

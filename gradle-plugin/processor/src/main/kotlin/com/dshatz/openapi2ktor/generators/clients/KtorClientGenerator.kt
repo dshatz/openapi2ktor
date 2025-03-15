@@ -1,5 +1,6 @@
 package com.dshatz.openapi2ktor.generators.clients
 
+import com.dshatz.openapi2ktor.GeneratorConfig
 import com.dshatz.openapi2ktor.generators.Type
 import com.dshatz.openapi2ktor.generators.TypeStore
 import com.dshatz.openapi2ktor.generators.TypeStore.OperationParam.ParamLocation
@@ -18,7 +19,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import net.pwall.mustache.Template
 
-class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packages): IClientGenerator {
+class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packages, private val config: GeneratorConfig): IClientGenerator {
 
     private val baseApiClientType = ClassName(packages.client, "BaseClient")
     private val addOptionalParamHelper = MemberName(packages.client, "addOptionalParam")
@@ -29,8 +30,11 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
     private val unknownSuccessException = ClassName(packages.client, "UnknownSuccessCodeError")
     private val unknownErrorException = ClassName(packages.client, "OpenAPIResponseError")
     private val ktorBodyMethod = MemberName("io.ktor.client.call", "body")
-    private val additionalPropsHelper = MemberName(packages.client, "processAdditionalProps")
+    private val additionalPropsSerializer = ClassName(packages.client, "PropsSerializer")
     private val libResultClass = ClassName(packages.client, "HttpResult")
+    private val bodyAsChanel = MemberName("io.ktor.client.statement", "bodyAsChannel")
+    private val readBuffer = MemberName("io.ktor.utils.io", "readBuffer")
+    private val decodeFromSource = MemberName("kotlinx.serialization.json.io", "decodeFromSource")
 
     private lateinit var securitySchemes: Map<String, SecurityScheme>
     private var globalSecurityRequirements: List<String> = emptyList()
@@ -102,6 +106,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
             ParameterSpec.builder("baseUrl", String::class.asTypeName())
                 .run { if (api.hasServers()) defaultValue("%S", api.servers.first().url) else this }
                 .build(),
+            ParameterSpec.builder("json", Json::class.asTypeName()).defaultValue("Json { ignoreUnknownKeys = true }").build(),
             ParameterSpec.builder("config", configLambdaType).defaultValue(CodeBlock.of("{}")).build()
         )
         /*val params = listOf(
@@ -111,7 +116,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                 .build()
         )*/
         val constructor = FunSpec.constructorBuilder().addParameters(params).build()
-        val props = params.map { PropertySpec.builder(it.name, it.type, KModifier.PRIVATE).initializer(it.name).build() }
+        val props = params.filter { it.name != "json" }.map { PropertySpec.builder(it.name, it.type, KModifier.PRIVATE).initializer(it.name).build() }
 
         val authSchemesProp = PropertySpec.builder("authSchemes", MUTABLE_MAP.parameterizedBy(String::class.asTypeName(), authSchemeType(packages)), KModifier.PRIVATE)
             .initializer(
@@ -136,6 +141,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
             .primaryConstructor(constructor)
             .superclass(baseApiClientType)
             .addSuperclassConstructorParameter(CodeBlock.of("engine"))
+            .addSuperclassConstructorParameter("json")
             .addSuperclassConstructorParameter(
                 CodeBlock.builder()
                     .beginControlFlow("")
@@ -151,14 +157,14 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
             .addFunction(
                 FunSpec.constructorBuilder()
                     .addParameter("engine", httpClientFactory)
-                    .addParameters(params.drop(1))
-                    .callThisConstructor("engine.create()", "baseUrl", "config")
+                    .addParameters(params.drop(1)) // remaining
+                    .callThisConstructor("engine.create()", "baseUrl", "json", "config")
                     .build()
             )
             .addProperties(props)
             .addAnnotation(AnnotationSpec.builder(Suppress::class).addMember("%S", "unused").build())
             .apply {
-                generateFunctions(paths, prefix).forEach { (function, exception) ->
+                generateFunctions(paths, prefix).forEach { (function) ->
                     addFunction(function)
 //                    addType(exception)
                 }
@@ -185,8 +191,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
     }
 
     data class EndpointTools(
-        val func: FunSpec,
-        val exceptionClass: TypeSpec,
+        val func: FunSpec
     )
 
     /**
@@ -240,6 +245,8 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                 val exceptionTypeName = funName.capitalize() + "Exception"
                 val exceptionType = buildResponseException(exceptionTypeName, errorResponseClass)
 
+                val enableAdditionalProps = config.additionalPropsConfig.matches(pathID)
+
                 val requestFun = FunSpec.builder(funName)
                     .returns(libResultClass.parameterizedBy(successResponseClass, errorResponseClass))
                     .addModifiers(KModifier.SUSPEND)
@@ -249,6 +256,17 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                     }
                     .addCode(
                         CodeBlock.builder()
+                            .apply {
+                                if (enableAdditionalProps) {
+                                    statusToResponseType.entries.mapIndexed { index, (status, type) ->
+                                        addStatement(
+                                            "val s$status = object: %T(%T.serializer()) {}",
+                                            additionalPropsSerializer.parameterizedBy(type.resolveClassName().copy(nullable = false)),
+                                            type.resolveClassName().copy(nullable = false)
+                                        )
+                                    }
+                                }
+                            }
                             .beginControlFlow("try")
                             .beginControlFlow("val response = httpClient.%M(%L)",
                                 MemberName("io.ktor.client.request", verb, isExtension = true),
@@ -282,7 +300,11 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                             .apply {
                                 // Success status code mapping
                                 statusToResponseType.filterKeys { it.toInt().isSuccessCode() }.forEach { (code, type) ->
-                                    addStatement("%L -> response.%M<%T>()", code.toInt(), ktorBodyMethod, type.resolveClassName())
+                                    if (enableAdditionalProps) {
+                                        addStatement("%L -> json.%M<%T>(s%L, response.%M().%M())", code.toInt(), decodeFromSource, type.resolveClassName(), code.toInt(), bodyAsChanel, readBuffer)
+                                    } else {
+                                        addStatement("%L -> response.%M<%T>()", code.toInt(), ktorBodyMethod, type.resolveClassName())
+                                    }
                                 }
                                 if (statusToResponseType.isEmpty()) {
                                     addStatement("else -> response.%M<%T>()", ktorBodyMethod, successResponseClass)
@@ -297,8 +319,12 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                             .beginControlFlow("val responseData: %T = when(e.response.status.value)", errorResponseClass)  // begin when
                             .apply {
                                 // Error status code mapping
-                                statusToResponseType.filterKeys { !it.toInt().isSuccessCode() }.forEach { (status, type) ->
-                                    addStatement("%L -> e.response.%M<%T>()", status.toInt(), ktorBodyMethod, type.resolveClassName())
+                                statusToResponseType.filterKeys { !it.toInt().isSuccessCode() }.forEach { (code, type) ->
+                                    if (enableAdditionalProps) {
+                                        addStatement("%L -> json.%M<%T>(s%L, e.response.%M().%M())", code.toInt(), decodeFromSource, type.resolveClassName(), code.toInt(), bodyAsChanel, readBuffer)
+                                    } else {
+                                        addStatement("%L -> e.response.%M<%T>()", code.toInt(), ktorBodyMethod, type.resolveClassName())
+                                    }
                                 }
                                 if (statusToResponseType.isEmpty()) {
                                     addStatement("else -> response.%M<%T>()", ktorBodyMethod, errorResponseClass)
@@ -311,7 +337,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                             .endControlFlow() // catch
                             .build()
                     ).build()
-                EndpointTools(requestFun, exceptionType)
+                EndpointTools(requestFun)
             }
         }
         return funcSpecs
