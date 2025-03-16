@@ -6,6 +6,7 @@ import com.dshatz.openapi2ktor.generators.clients.IClientGenerator
 import com.dshatz.openapi2ktor.utils.Packages
 import com.squareup.kotlinpoet.FileSpec
 import java.io.Serializable
+import java.lang.RuntimeException
 import java.nio.file.Path
 
 /*fun main() {
@@ -30,7 +31,7 @@ data class EntryPoint(
 ) {
     fun run(): Pair<List<FileSpec>, List<IClientGenerator.Template>> {
         val parser = Parser()
-        val api = parser.fromFile(Path.of(apiFile))
+        val api = kotlin.runCatching { parser.fromFile(Path.of(apiFile)) }.getOrElse { throw RuntimeException("Could not read spec file at $apiFile") }
         val packages = Packages(config.basePackage)
         if (api != null) {
             val typeStore = TypeStore()
