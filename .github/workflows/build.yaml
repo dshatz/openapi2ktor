@@ -103,10 +103,15 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: |
             gradle-${{ runner.os }}-
-      - name: Extract Version from Git Tag
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+      - id: get_version
+        name: Get version
+        uses: jannemattila/get-version-from-tag@v4
       - name: Publish to Maven Repository
-        run: ./gradlew gradle-plugin:plugin:publish -Pversion=$VERSION --build-cache
+        run: |
+          VERSION=$(echo "${{ steps.get_version.outputs.version }}")
+          ./gradlew gradle-plugin:plugin:publish -Pversion=$VERSION --build-cache
         env:
           mavenUsername: ${{ secrets.MAVEN_USERNAME }}
           mavenPassword: ${{ secrets.MAVEN_PASSWORD }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSWORD: ${{ secrets.GPG_PASSWORD }}

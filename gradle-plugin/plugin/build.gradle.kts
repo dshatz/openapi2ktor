@@ -3,8 +3,8 @@ plugins {
     alias(libs.plugins.kotlin.jvm)
     `java-gradle-plugin`
     id("com.gradleup.shadow") version "9.0.0-beta10"
-//    alias(libs.plugins.vanniktech.mavenPublish)
     `maven-publish`
+    signing
 }
 
 gradlePlugin {
@@ -43,14 +43,28 @@ publishing {
             url = if (version.toString().endsWith("SNAPSHOT")) snapshotsRepoUrl else releasesRepoUrl
 
             credentials {
-                username = System.getenv("mavenUsername") ?: ""
-                password = System.getenv("mavenPassword") ?: ""
+                username = System.getenv("mavenUsername")
+                password = System.getenv("mavenPassword")
             }
         }
     }
 }
 
 tasks.getByName("generateMetadataFileForShadowPublication").dependsOn(tasks.jar)
+
+//tasks.withType<PublishToMavenRepository>().configureEach {
+//    if (publication.name == "pluginMaven") {
+//        enabled = false
+//    }
+//}
+
+signing {
+    useInMemoryPgpKeys(
+        System.getenv("GPG_PRIVATE_KEY"),
+        System.getenv("GPG_PASSWORD")
+    )
+    sign(publishing.publications["shadow"])
+}
 
 dependencies {
     implementation(project(":processor"))
