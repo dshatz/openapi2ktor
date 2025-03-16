@@ -37,6 +37,7 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
             .gradle
+            .gradle/build-cache
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: |
             gradle-${{ runner.os }}-
@@ -45,7 +46,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run Gradle Checks and Tests
-        run: ./gradlew :gradle-plugin:processor:check --no-daemon --scan --stacktrace
+        run: ./gradlew :gradle-plugin:processor:check --no-daemon --scan --stacktrace --build-cache
         continue-on-error: true # Allow test failures but continue
 
       - name: Upload Test Results

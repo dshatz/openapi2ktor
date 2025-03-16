@@ -181,7 +181,7 @@ fun List<String>.replaceCurlyWithBy(): List<String> {
 
 private fun List<String>.replaceIntegers(): List<String> {
     return map {
-        if (it.toIntOrNull() != null) "_$it" else it
+        if (it.toIntOrNull() != null) "i$it" else it
     }
 }
 

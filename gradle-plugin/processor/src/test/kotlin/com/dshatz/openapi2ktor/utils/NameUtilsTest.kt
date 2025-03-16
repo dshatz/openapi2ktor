@@ -32,7 +32,7 @@ class NameUtilsTest {
         val jsonReference = "file:/sample.yaml#/paths//3/orders//get/responses/200/content/application/json/schema/items"
 
         assertEquals(
-            "com.example.models.paths._3.orders.get.response.items",
+            "com.example.models.paths.i3.orders.get.response.items",
             makePackageName(jsonReference, "com.example.models")
         )
     }
