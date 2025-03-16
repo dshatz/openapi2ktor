@@ -1,4 +1,4 @@
-name: Build
+name: CI
 
 on:
   push:
@@ -23,7 +23,7 @@ jobs:
         with:
           distribution: 'temurin' # Eclipse Temurin (AdoptOpenJDK)
           java-version: '17'
-          cache: gradle # Enables built-in Gradle caching
+          cache: gradle # Built-in Gradle dependency caching
 
       - name: Restore Gradle Cache
         uses: actions/cache@v4
@@ -39,5 +39,21 @@ jobs:
       - name: Grant Execute Permission to Gradle Wrapper
         run: chmod +x gradlew
 
-      - name: Build & Check Gradle Plugin Processor
+      - name: Run Gradle Checks and Tests
         run: ./gradlew :gradle-plugin:processor:check --no-daemon --scan --stacktrace
+
+      - name: Upload Test Results
+        if: always() # Ensures this runs even if tests fail
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: '**/build/test-results/**/*.xml'
+          retention-days: 7
+
+      - name: Publish Test Report
+        if: always() # Ensures this runs even if tests fail
+        uses: dorny/test-reporter@v1
+        with:
+          name: JUnit Test Results
+          path: '**/build/test-results/**/*.xml'
+          reporter: java-junit
