@@ -78,7 +78,7 @@ jobs:
 
   publish:
     needs: build  # Runs only if the build job completes
-    if: github.event_name == 'release' || github.ref == 'refs/heads/main'  # Only publish on releases or main branch
+    if: github.event_name == 'release'
     runs-on: ubuntu-latest
 
     steps:
