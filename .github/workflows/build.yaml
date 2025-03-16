@@ -25,9 +25,6 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
-      - name: Extract Version from Git Tag
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
       - name: Find JAVA_HOME
         run: |
           echo "Checking JAVA_HOME..."
@@ -50,6 +47,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
+            ./gradle/wrapper
             .gradle/build-cache
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: |
@@ -100,11 +98,13 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
+            ./gradle/wrapper
             .gradle/build-cache
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: |
             gradle-${{ runner.os }}-
-
+      - name: Extract Version from Git Tag
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
       - name: Publish to Maven Repository
         run: ./gradlew gradle-plugin:plugin:publish -Pversion=$VERSION --build-cache
         env:
