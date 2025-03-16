@@ -20,6 +20,7 @@ import org.gradle.api.provider.Property
 import org.gradle.api.tasks.*
 import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import javax.inject.Inject
 
 class Plugin : Plugin<Project> {
@@ -42,8 +43,8 @@ class Plugin : Plugin<Project> {
                     val kotlinExtension = project.extensions.findByType(KotlinMultiplatformExtension::class.java)
                     if (kotlinExtension != null) {
                         project.afterEvaluate {
-                            kotlinExtension.sourceSets.getByName("commonMain").kotlin.srcDir(generatorExtension.outputDir)
-                            kotlinExtension.sourceSets.getByName("commonTest").kotlin.srcDir(generatorExtension.outputDir)
+                            kotlinExtension.sourceSets.getByName("commonMain").kotlin.srcDir(generatorExtension.outputDir.dir("src/main/kotlin"))
+                            kotlinExtension.sourceSets.getByName("commonTest").kotlin.srcDir(generatorExtension.outputDir.dir("src/main/kotlin"))
                         }
                     }
                 }
@@ -52,7 +53,7 @@ class Plugin : Plugin<Project> {
                         it.kotlin.srcDir(generatorExtension.outputDir)
                     }
                 }
-                project.tasks.named("compileKotlin").configure {
+                project.tasks.withType(KotlinCompile::class.java).configureEach {
                     it.dependsOn(task.get())
                 }
                 true
