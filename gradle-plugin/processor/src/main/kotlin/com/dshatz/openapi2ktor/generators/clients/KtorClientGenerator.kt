@@ -109,12 +109,6 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
             ParameterSpec.builder("json", Json::class.asTypeName()).defaultValue("Json { ignoreUnknownKeys = true }").build(),
             ParameterSpec.builder("config", configLambdaType).defaultValue(CodeBlock.of("{}")).build()
         )
-        /*val params = listOf(
-            ParameterSpec.builder("client", baseApiClientType).build(),
-            ParameterSpec.builder("baseUrl", String::class.asTypeName())
-                .run { if (api.hasServers()) defaultValue("%S", api.servers.first().url) else this }
-                .build()
-        )*/
         val constructor = FunSpec.constructorBuilder().addParameters(params).build()
         val props = params.filter { it.name != "json" }.map { PropertySpec.builder(it.name, it.type, KModifier.PRIVATE).initializer(it.name).build() }
 
@@ -146,9 +140,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                 CodeBlock.builder()
                     .beginControlFlow("")
                     .beginControlFlow("%M", MemberName("io.ktor.client.plugins", "defaultRequest"))
-                    .addStatement("url(%N)",
-                        "baseUrl"
-                    )
+                    .addStatement("url(%N)", "baseUrl")
                     .endControlFlow() // end defaultRequest
                     .addStatement("config()")
                     .endControlFlow()

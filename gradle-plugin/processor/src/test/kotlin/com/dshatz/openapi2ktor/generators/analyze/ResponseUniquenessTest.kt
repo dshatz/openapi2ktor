@@ -1,5 +1,6 @@
 package com.dshatz.openapi2ktor.generators.analyze
 
+import com.dshatz.openapi2ktor.GeneratorConfig
 import com.dshatz.openapi2ktor.generators.TypeStore
 import com.dshatz.openapi2ktor.utils.Packages
 import com.dshatz.openapi2ktor.utils.isSuccessCode
@@ -27,9 +28,9 @@ class ResponseUniquenessTest {
     }
 
     private class TestAnalyzer(typeStore: TypeStore, packages: Packages): OpenApiAnalyzer(
-        outputDir,
         typeStore,
-        packages
+        packages,
+        GeneratorConfig.default()
     ) {
         var onCalled: ((pathString: String, verb: String, success: Boolean, willWrap: Boolean) -> Unit)? = null
 

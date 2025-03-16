@@ -72,9 +72,11 @@ fun makePackageName(jsonReference: String, basePackage: String): String {
         val parts = jsonReference
             .split("/")
             .dropWhile { !it.contains("#") }
-            .drop(1)
-            .replaceCurlyWithBy()
             .filterNot { it.isBlank() }
+            .drop(1)
+            .replaceIntegers()
+            .replaceNamesStartingWithInt()
+            .replaceCurlyWithBy()
 
 
         val typeIndex = if (parts[0] == "components") 1 else 0
@@ -174,6 +176,20 @@ fun List<String>.replaceCurlyWithBy(): List<String> {
         if (it.startsWith("{") && it.endsWith("}"))
             "by" + it.drop(1).dropLast(1).safePropName().capitalize()
         else it
+    }
+}
+
+private fun List<String>.replaceIntegers(): List<String> {
+    return map {
+        if (it.toIntOrNull() != null) "_$it" else it
+    }
+}
+
+private fun List<String>.replaceNamesStartingWithInt(): List<String> {
+    return map {
+        if (it.first().isDigit()) it.replace(Regex("^([0-9]+)(.*)$")) {
+            it.groups[2]?.value + it.groups[1]?.value
+        } else it
     }
 }
 

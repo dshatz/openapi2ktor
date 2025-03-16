@@ -27,6 +27,29 @@ class NameUtilsTest {
     }
 
     @Test
+    fun `test make package name with int`() {
+
+        val jsonReference = "file:/sample.yaml#/paths//3/orders//get/responses/200/content/application/json/schema/items"
+
+        assertEquals(
+            "com.example.models.paths._3.orders.get.response.items",
+            makePackageName(jsonReference, "com.example.models")
+        )
+    }
+
+    @Test
+    fun `test make package name with segment starting with int`() {
+
+        val jsonReference = "file:/sample.yaml#/paths//3v/orders//get/responses/200/content/application/json/schema/items"
+
+        assertEquals(
+            "com.example.models.paths.v3.orders.get.response.items",
+            makePackageName(jsonReference, "com.example.models")
+        )
+    }
+
+
+    @Test
     fun `package name for response component`() {
         val jsonReference = "file:/sample.yaml#/components/responses/bad-request"
         assertEquals("com.example.models.components.responses.badRequest", makePackageName(jsonReference, "com.example.models"))

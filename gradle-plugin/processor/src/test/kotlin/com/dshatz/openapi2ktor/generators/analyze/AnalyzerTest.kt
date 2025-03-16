@@ -1,6 +1,7 @@
 package com.dshatz.openapi2ktor.generators.analyze
 
 import com.dshatz.openapi2ktor.BaseTestClass
+import com.dshatz.openapi2ktor.GeneratorConfig
 import com.dshatz.openapi2ktor.generators.ObjectAssertScope
 import com.dshatz.openapi2ktor.generators.Type
 import com.dshatz.openapi2ktor.generators.Type.Companion.simpleType
@@ -27,7 +28,7 @@ class AnalyzerTest: BaseTestClass() {
     override fun init() {
         super.init()
         typeStore = TypeStore()
-        analyzer = OpenApiAnalyzer(outputDir, typeStore, packages)
+        analyzer = OpenApiAnalyzer(typeStore, packages, GeneratorConfig.default())
     }
 
     private fun ObjectAssertScope.assertUser() {

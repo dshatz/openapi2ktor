@@ -1,5 +1,6 @@
 package com.dshatz.openapi2ktor.generators
 
+import com.dshatz.openapi2ktor.GeneratorConfig
 import com.dshatz.openapi2ktor.generators.Type.Companion.simpleType
 import com.dshatz.openapi2ktor.generators.models.KotlinxCodeGenerator
 import com.dshatz.openapi2ktor.utils.Packages
@@ -19,7 +20,7 @@ class KotlinxCodeGeneratorTest {
     private lateinit var generator: KotlinxCodeGenerator
     @BeforeTest
     fun init() {
-        generator = KotlinxCodeGenerator(TypeStore(), Packages("com.example"))
+        generator = KotlinxCodeGenerator(TypeStore(), Packages("com.example"), GeneratorConfig.default())
         generator.responseMappings = KotlinxCodeGenerator.ResponseInterfaceResult(emptyList(), emptyMap())
     }
 

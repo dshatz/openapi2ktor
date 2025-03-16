@@ -43,6 +43,16 @@ data class EntryPoint(
 interface GeneratorConfig: Serializable {
     val additionalPropsConfig: AdditionalPropsConfig
     val basePackage: String
+
+    companion object {
+        fun default(): GeneratorConfig = DefaultGeneratorConfig
+    }
+}
+object DefaultGeneratorConfig: GeneratorConfig {
+    override val additionalPropsConfig: AdditionalPropsConfig = object: AdditionalPropsConfig {
+        override val additionalPropPatterns: List<String> = emptyList()
+    }
+    override val basePackage: String = ""
 }
 
 interface AdditionalPropsConfig: Serializable {
