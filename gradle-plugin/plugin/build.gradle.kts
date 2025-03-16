@@ -32,6 +32,8 @@ publishing {
     publications {
         create<MavenPublication>("shadow") {
             from(components["shadow"])
+            group = "com.dshatz.openapi2ktor"
+            artifactId = "plugin"
         }
     }
     repositories {
