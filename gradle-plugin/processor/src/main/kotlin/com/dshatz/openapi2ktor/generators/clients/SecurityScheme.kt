@@ -60,7 +60,7 @@ sealed class Http(): SecurityScheme() {
         }
 
         override fun generateApplicator(name: String): CodeBlock {
-            return CodeBlock.of("%L?.bearer?.let { %M(it) }", generateAccessor(name), /*bearerMethod*/)
+            return CodeBlock.of("%L?.bearer?.let { %M(it) }", generateAccessor(name), bearerMethod)
         }
     }
 

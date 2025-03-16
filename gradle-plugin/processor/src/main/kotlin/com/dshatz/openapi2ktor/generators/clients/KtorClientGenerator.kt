@@ -64,12 +64,12 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
             securitySchemes = Json {
                 ignoreUnknownKeys = true
             }.decodeFromString<Map<String, SecurityScheme>>(Overlay.of(schema.securitySchemes).toJson().toString())
-                .mapValues { (name, scheme) ->
-                    /*if (scheme is ApiKey && scheme.bearerFormat == "bearer") {
+                .mapValues { (_, scheme) ->
+                    if (scheme is ApiKey && scheme.bearerFormat == "bearer") {
                         // Some strange syntax for defining bearer.
                         // For example in TMDB and https://github.com/nulltea/kicksware-api/blob/master/openapi.yaml
                         Http.Bearer("")
-                    } else */scheme
+                    } else scheme
                 }
         } else securitySchemes = emptyMap()
         globalSecurityRequirements = schema.securityRequirements.flatMap { it.requirements.keys }
