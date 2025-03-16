@@ -1,4 +1,4 @@
-name: CI
+name: CI & Publish
 
 on:
   push:
@@ -9,14 +9,78 @@ on:
     branches:
       - main
       - develop
+  release:
+    types: [created]  # Triggers publishing when a release is created
 
 permissions:
   contents: read
-  checks: write  # Needed for test-reporter
-  pull-requests: write  # Allows reporting on PRs
+  checks: write
+  pull-requests: write
+  packages: write  # Required for publishing to GitHub Packages
 
 jobs:
   build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Extract Version from Git Tag
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+      - name: Find JAVA_HOME
+        run: |
+          echo "Checking JAVA_HOME..."
+          if [ -z "$JAVA_HOME" ]; then
+            JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
+            echo "JAVA_HOME found: $JAVA_HOME"
+            echo "JAVA_HOME=$JAVA_HOME" >> $GITHUB_ENV
+          fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: gradle
+
+      - name: Restore Gradle Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            .gradle/build-cache
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Grant Execute Permission to Gradle Wrapper
+        run: chmod +x gradlew
+
+      - name: Run Gradle Checks and Tests
+        run: ./gradlew :gradle-plugin:processor:check --no-daemon --scan --stacktrace --build-cache
+        continue-on-error: true  # Continue even if tests fail
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: '**/build/test-results/**/*.xml'
+          retention-days: 7
+
+      - name: Publish Test Report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: JUnit Test Results
+          path: '**/build/test-results/**/*.xml'
+          reporter: java-junit
+
+  publish:
+    needs: build  # Runs only if the build job completes
+    if: github.event_name == 'release' || github.ref == 'refs/heads/main'  # Only publish on releases or main branch
     runs-on: ubuntu-latest
 
     steps:
@@ -36,32 +100,13 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-            .gradle
             .gradle/build-cache
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: |
             gradle-${{ runner.os }}-
 
-      - name: Grant Execute Permission to Gradle Wrapper
-        run: chmod +x gradlew
-
-      - name: Run Gradle Checks and Tests
-        run: ./gradlew :gradle-plugin:processor:check --no-daemon --scan --stacktrace --build-cache
-        continue-on-error: true # Allow test failures but continue
-
-      - name: Upload Test Results
-        if: always() # Run this even if tests fail
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results
-          path: '**/build/test-results/**/*.xml'
-          retention-days: 7
-
-      - name: Publish Test Report
-        if: always() # Run this even if tests fail
-        uses: dorny/test-reporter@v1
-        with:
-          name: JUnit Test Results
-          path: '**/build/test-results/**/*.xml'
-          reporter: java-junit
-          fail-on-error: true  # Optional: Fail workflow if tests fail
+      - name: Publish to Maven Repository
+        run: ./gradlew gradle-plugin:plugin:publish -Pversion=$VERSION --build-cache
+        env:
+          mavenUsername: ${{ secrets.MAVEN_USERNAME }}
+          mavenPassword: ${{ secrets.MAVEN_PASSWORD }}
