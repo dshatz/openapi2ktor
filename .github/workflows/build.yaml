@@ -10,6 +10,11 @@ on:
       - main
       - develop
 
+permissions:
+  contents: read
+  checks: write  # Needed for test-reporter
+  pull-requests: write  # Allows reporting on PRs
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -21,9 +26,9 @@ jobs:
       - name: Set up JDK 17
         uses: actions/setup-java@v3
         with:
-          distribution: 'temurin' # Eclipse Temurin (AdoptOpenJDK)
+          distribution: 'temurin'
           java-version: '17'
-          cache: gradle # Built-in Gradle dependency caching
+          cache: gradle
 
       - name: Restore Gradle Cache
         uses: actions/cache@v4
@@ -41,9 +46,10 @@ jobs:
 
       - name: Run Gradle Checks and Tests
         run: ./gradlew :gradle-plugin:processor:check --no-daemon --scan --stacktrace
+        continue-on-error: true # Allow test failures but continue
 
       - name: Upload Test Results
-        if: always() # Ensures this runs even if tests fail
+        if: always() # Run this even if tests fail
         uses: actions/upload-artifact@v4
         with:
           name: test-results
@@ -51,9 +57,10 @@ jobs:
           retention-days: 7
 
       - name: Publish Test Report
-        if: always() # Ensures this runs even if tests fail
+        if: always() # Run this even if tests fail
         uses: dorny/test-reporter@v1
         with:
           name: JUnit Test Results
           path: '**/build/test-results/**/*.xml'
           reporter: java-junit
+          fail-on-error: true  # Optional: Fail workflow if tests fail
