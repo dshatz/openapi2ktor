@@ -75,7 +75,7 @@ jobs:
           reporter: java-junit
 
   publish:
-    needs: build  # Runs only if the build job completes
+    needs: test  # Runs only if tests pass.
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
 
