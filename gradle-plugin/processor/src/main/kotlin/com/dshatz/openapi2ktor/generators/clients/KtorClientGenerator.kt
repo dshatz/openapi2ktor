@@ -43,11 +43,38 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
         processSecurity(schema)
         val serversEnum = generateServersEnum(schema)
 
-        val clients = schema.paths.entries.groupBy { it.key.drop(1).substringBefore("/") }
+
+        fun TreeNode.generateClients(parentPath: String, results: MutableList<FileSpec>) {
+            val currentPath = parentPath + "/" + toString()
+            if (currentPath.isNotEmpty() && children.any { it.pathObj != null } || pathObj != null) {
+                // This node has some api paths that need to be generated.
+                // So we generate all descending paths in one client.
+                results += generateClientForPackagePrefix(schema, currentPath, getAllPaths())
+            } else {
+                children.forEach {
+                    it.generateClients(currentPath, results)
+                }
+            }
+        }
+
+        val pathTree = buildPathTree(schema.paths)
+        val clientSpecs = mutableListOf<FileSpec>()
+        pathTree.generateClients("", clientSpecs)
+        /*val clients = pathTree.children.map { node ->
+            val path = node.path.substringAfter('/')
+            val prefix = if (path.toIntOrNull() != null) {
+                // probably a version path (e.g. /3/...)
+                "v$path"
+            } else path
+
+            val allPaths = node.getAllPaths()
+            generateClientForPackagePrefix(schema, prefix, allPaths)
+        }*/
+        /*val clients = schema.paths.entries.groupBy { it.key.drop(1).substringBefore("/") }
             .mapValues { (firstSegment, paths) ->
                 generateClientForPackagePrefix(schema, firstSegment, paths.associate { it.key to it.value})
-            }
-        return clients.values.toList() + serversEnum
+            }*/
+        return clientSpecs + serversEnum
     }
 
     override fun generateTemplates(): List<IClientGenerator.Template> {
@@ -130,7 +157,9 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
         }
         val httpClientFactory = HttpClientEngineFactory::class.asTypeName().parameterizedBy(STAR)
 
-        val prefixClientName = ClassName(packages.client + "." + prefix.safePropName(), "${prefix.capitalize()}Client")
+        val pkg = packages.client + "." + prefix.split('/').joinToString(".") { it.safePropName() }
+        val clientName = prefix.substringAfterLast('/').safePropName().capitalize() + "Client"
+        val prefixClientName = ClassName(pkg, clientName)
         val clientType = TypeSpec.classBuilder(prefixClientName)
             .primaryConstructor(constructor)
             .superclass(baseApiClientType)
@@ -156,7 +185,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
             .addProperties(props)
             .addAnnotation(AnnotationSpec.builder(Suppress::class).addMember("%S", "unused").build())
             .apply {
-                generateFunctions(paths, prefix).forEach { (function) ->
+                generateFunctions(paths, prefix.replace("/", "")).forEach { (function) ->
                     addFunction(function)
 //                    addType(exception)
                 }

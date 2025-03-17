@@ -55,7 +55,11 @@ class TypeStore {
         return type in exceptionTypes
     }
 
-    data class PathId(val pathString: String, val verb: String)
+    data class PathId(val pathString: String, val verb: String) {
+        override fun toString(): String {
+            return "${verb.uppercase()} $pathString"
+        }
+    }
 
     fun resolveReference(jsonReference: String): Type {
         println("Resolving $jsonReference...")
@@ -114,7 +118,15 @@ class TypeStore {
     fun getResponseSuccessInterface(path: PathId) = responseInterfaces[path]?.first
 
     fun getResponseMapping(response: PathId): Map<Int, ResponseTypeInfo> = synchronized(responseMapping) {
-        return responseMapping[response]!!
+        return responseMapping[response] ?: error("No response mapping for $response\n ${responseMappingToString()}")
+    }
+
+    private fun responseMappingToString(): String {
+        return responseMapping.entries.joinToString("\n") {
+            "${it.key} -> ${it.value.entries.joinToString("\n") { 
+                "${it.key} -> ${it.value}"
+            }.prependIndent("  ")}"
+        }
     }
 
     fun getAllResponseTypes() = responseMapping.keys

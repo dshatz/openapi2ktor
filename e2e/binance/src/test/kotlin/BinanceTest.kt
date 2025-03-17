@@ -1,25 +1,16 @@
 import binance.client.HttpResult
-import binance.client.api.ApiClient
+import binance.client.api.v3.V3Client
 import binance.models.paths.api.v3.avgPrice.get.response.GetApiV3AvgPriceResponse400
 import io.ktor.client.engine.cio.*
 import io.ktor.client.engine.mock.*
-import io.ktor.client.plugins.*
 import io.ktor.client.plugins.logging.*
 import io.ktor.client.request.*
-import io.ktor.http.*
-import io.ktor.utils.io.*
-import kotlinx.coroutines.async
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import org.junit.Assert.assertThrows
-import kotlin.coroutines.coroutineContext
 import kotlin.test.*
 
 class BinanceTest {
@@ -32,7 +23,7 @@ class BinanceTest {
     }
 
 
-    private val binance = ApiClient(CIO) {
+    private val binance = V3Client(CIO) {
         install(Logging) {
             level = LogLevel.ALL
             logger = Logger.SIMPLE
@@ -40,7 +31,7 @@ class BinanceTest {
     }
     @Test
     fun `get with invalid param`() = runTest {
-        val r = binance.getV3AvgPrice("")
+        val r = binance.getAvgPrice("")
         var errorReturned = false
         val a = r.dataOrNull {
             errorReturned = true
@@ -50,13 +41,13 @@ class BinanceTest {
         assertTrue(errorReturned)
 
         println(assertFailsWith(GetApiV3AvgPriceResponse400::class) {
-            binance.getV3AvgPrice("").dataOrThrow()
+            binance.getAvgPrice("").dataOrThrow()
         }.data.msg)
     }
 
     @Test
     fun `get with valid param`() = runTest {
-        val r = binance.getV3AvgPrice("BTCEUR")
+        val r = binance.getAvgPrice("BTCEUR")
         var errorReturned = false
         val price = r.dataOrNull {
             errorReturned = true
@@ -71,7 +62,7 @@ class BinanceTest {
     @Test
     fun `get with optional params`() = runTest {
         val mock = Mocker(binance)
-        val response = mock.makeRequest(req = { getV3Trades("BTCEUR") }) {
+        val response = mock.makeRequest(req = { getTrades("BTCEUR") }) {
             assertHasQueryParam("symbol", "BTCEUR")
             assertNoQueryParam("limit") // optional param, not passed
         }
@@ -81,12 +72,12 @@ class BinanceTest {
     @Test
     fun `handle unknown error response`() = runTest {  }
 
-    data class Mocker(val normalClient: ApiClient, val mockEngine: MockEngine = MockEngine { respondBadRequest() }) {
-        val mockClient = ApiClient(mockEngine)
+    data class Mocker(val normalClient: V3Client, val mockEngine: MockEngine = MockEngine { respondBadRequest() }) {
+        val mockClient = V3Client(mockEngine)
     }
 
     private suspend inline fun <reified T> Mocker.makeRequest(
-        crossinline req: suspend ApiClient.() -> T,
+        crossinline req: suspend V3Client.() -> T,
         overrideResponse: T? = null,
         overrideRequest: (HttpRequestData) -> HttpRequestData = { it },
         crossinline assertScope: RequestAssertScope.() -> Unit
