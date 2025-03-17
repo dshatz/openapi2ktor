@@ -7,6 +7,7 @@ kotlin = "2.1.10"
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 serial = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 local-plugin = { id = "com.dshatz.openapi2ktor", version = "*" }
+vanniktech-mavenPublish = { id = "com.vanniktech.maven.publish", version = "0.29.0" }
 
 [libraries]
 serial = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }

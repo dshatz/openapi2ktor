@@ -1,10 +1,15 @@
+import com.vanniktech.maven.publish.GradlePlugin
+import com.vanniktech.maven.publish.JavadocJar
+import com.vanniktech.maven.publish.SonatypeHost
+
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.serial)
+    alias(libs.plugins.vanniktech.mavenPublish)
 }
 
 group = "com.dshatz.openapi2ktor"
-version = "1.0.0-SNAPSHOT1"
+version = project.findProperty("version") as String? ?: "0.1.0-SNAPSHOT1"
 
 dependencies {
     implementation("com.reprezen.kaizen:openapi-parser:4.0.4") { exclude(group = "junit") }
@@ -27,3 +32,33 @@ dependencies {
 kotlin {
     jvmToolchain(17)
 }
+
+mavenPublishing {
+    publishToMavenCentral(SonatypeHost.S01)
+    signAllPublications()
+    coordinates(project.group.toString(), "processor", project.version.toString())
+    pom {
+        name = "OpenApi3 to Ktor"
+        description = "Ktor client and kotlin model generator."
+        inceptionYear = "2025"
+        url = "https://github.com/dshatz/openapi2ktor/"
+        licenses {
+            license {
+                name = "GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007"
+                url = "https://github.com/dshatz/openapi2ktor/blob/main/LICENSE"
+            }
+        }
+        developers {
+            developer {
+                id = "dshatz"
+                name = "Daniels Šatcs"
+                email = "dev@dshatz.com"
+            }
+        }
+        scm {
+            url = "https://github.com/dshatz/openapi2ktor"
+            connection = "git@github.com:dshatz/openapi2ktor.git"
+        }
+    }
+}
+
