@@ -5,6 +5,7 @@ This project aims to generate easy-to-use and portable Ktor clients from OpenApi
 # Installation
 
 ## 1. Add gradle plugin
+https://img.shields.io/maven-central/v/com.dshatz.openapi2ktor/plugin
 **libs.version.toml**
 ```toml
 openapi = { id = "com.dshatz.openapi2ktor", version = "1.0.0" }
