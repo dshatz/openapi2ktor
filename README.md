@@ -70,6 +70,7 @@ openapi {
   }
 }
 ```
+The generated response models of marked urls will then have a property `additionalProps: Map<String, JsonElement>`.
 
 Note: this may have a performance penalty so only enable on urls which are known to misalign with the API spec.
 
@@ -94,7 +95,7 @@ val apiClientProduction = V3Client(engine = CIO, baseUrl = Servers.PRODUCTION)
 | Basic  | ✅        |
 | OAuth  | ❌        |
 
-To apply your authentication information, use the method that starts with `set` in on your client instance. The exact name depends on the `securityScheme` name in the ymal file.
+To apply your authentication information, use the method that starts with `set` in on your client instance. The exact name depends on the `securityScheme` name in the YAML file.
 
 ## Making calls
 Read this to know how to call your API.
