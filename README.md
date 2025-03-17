@@ -156,6 +156,7 @@ try {
 |       enums   | ✅            |  enum class  |
 |     anyOf     |  ❌           | becomes a JsonElement |
 |  description  | ✅            | generates simple KDocs  |
+|  urls with multiple possible status codes  | ✅            | generates a sealed interface of possible responses. Use when() to process.  |
 
 # Status
 Give it a try and let me know how it goes. I still expect some OpenAPI specs not to compile, so please attach those if this happens.
