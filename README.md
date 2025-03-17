@@ -75,7 +75,7 @@ The generated response models of marked urls will then have a property `addition
 Note: this may have a performance penalty so only enable on urls which are known to misalign with the API spec.
 
 # Usage
-**Note**: It is recommended to inspect `module/build/openapi/<name>/client` directory to know what clients are available generated. 
+**Note**: It is recommended to inspect `module/build/openapi/<name>/client` directory to know what clients have been generated. 
 
 ## Create client
 The generated client constructor's signature is identical to that of ktor's `HttpClient` except that it also takes an optional `baseUrl` argument.
