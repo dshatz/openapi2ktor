@@ -145,7 +145,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                     .beginControlFlow("%M", MemberName("kotlin.collections", "buildMap"))
                     .apply {
                         securitySchemes.forEach { (name, scheme) ->
-                            add("put(%S, %T())", name, scheme.generatedContainer(packages))
+                            addStatement("put(%S, %T())", name, scheme.generatedContainer(packages))
                         }
                     }
                     .endControlFlow() // end buildMap
