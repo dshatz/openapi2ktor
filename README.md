@@ -9,7 +9,7 @@ This project aims to generate easy-to-use and portable Ktor clients from OpenApi
 
 **libs.version.toml**
 ```toml
-openapi = { id = "com.dshatz.openapi2ktor", version = "1.0.0" }
+openapi = { id = "com.dshatz.openapi2ktor", version = "1.0.1" }
 ```
 
 **build.gradle.kts**
@@ -19,7 +19,7 @@ plugins {
   alias(libs.plugins.openapi)
 
   // If you are not using version catalog
-  id("com.dshatz.openapi2ktor") version "1.0.0"
+  id("com.dshatz.openapi2ktor") version "1.0.1"
 }
 ```
 
