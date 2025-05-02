@@ -3,6 +3,7 @@ package com.dshatz.openapi2ktor.ksp
 import com.dshatz.openapi2ktor.EntryPoint
 import com.dshatz.openapi2ktor.GeneratorConfig
 import com.dshatz.openapi2ktor.AdditionalPropsConfig
+import com.dshatz.openapi2ktor.DateLibrary
 import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.KSAnnotated
 
@@ -24,6 +25,8 @@ class KspProcessor(
                     override val additionalPropPatterns: MutableList<String> = mutableListOf()
                 }
                 override val basePackage: String = "com.example"
+                override val generateClients: Boolean = true
+                override val dateLibrary: DateLibrary = DateLibrary.String
 
             }
         ).run()
