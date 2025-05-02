@@ -8,8 +8,8 @@ import sample.models.paths.orders.get.response.GetOrdersResponse403
 import sample.models.paths.orders.get.response.items.GetOrdersResponseItem
 import sample.models.paths.users.get.response.GetUsersResponse200
 import sample.models.paths.users.get.response.GetUsersResponse201
-import sample.models.paths.users.post.response.PostUsersResponse200
-import sample.models.paths.users.post.response.PostUsersResponse400
+import sample.models.paths.users.post.response.PostUsersResponse200AllOf
+import sample.models.paths.users.post.response.PostUsersResponse400AllOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -75,7 +75,7 @@ class KotlinxPolymorphismTest {
               }
         """.trimIndent()
 
-        val response = Json.decodeFromString<PostUsersResponse200>(json)
+        val response = Json.decodeFromString<PostUsersResponse200AllOf>(json)
         assertEquals("string", response.name)
     }
 
@@ -125,7 +125,7 @@ class KotlinxPolymorphismTest {
                 "user_type": "User"
             }
         """.trimIndent()
-        Json.decodeFromString<PostUsersResponse400>(json)
+        Json.decodeFromString<PostUsersResponse400AllOf>(json)
     }
 
     @Test
@@ -135,10 +135,12 @@ class KotlinxPolymorphismTest {
               "error": "very bad error"
             }
         """.trimIndent()
-        val result = Json.decodeFromString<PostUsersResponse400>(json)
+        val result = Json.decodeFromString<PostUsersResponse400AllOf>(json)
         assertNull(result.name)
         assertEquals(0, result.id)
         assertNull(result.userType)
         assertEquals("very bad error", result.error)
     }
+
+
 }

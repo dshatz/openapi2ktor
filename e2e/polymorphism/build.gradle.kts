@@ -1,3 +1,5 @@
+import com.dshatz.openapi2ktor.DateLibrary
+
 plugins {
     kotlin("jvm")
     kotlin("plugin.serialization")
@@ -11,6 +13,7 @@ dependencies {
     implementation("com.google.devtools.ksp:symbol-processing-api:2.1.10-1.0.30")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.0")
     testImplementation("io.github.denisbronx.netmock:netmock-engine:0.7.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.6.2")
     testImplementation(kotlin("test"))
 }
 
@@ -22,6 +25,17 @@ openapi3 {
                 parseUnknownProps {
                     urlStartsWith("/users")
                 }
+                dateLibrary(DateLibrary.JavaTime)
+            }
+        }
+
+        create("sampleKotlinxDatetime") {
+            inputSpec.set(layout.projectDirectory.file("src/test/resources/sample.yaml"))
+            config {
+                parseUnknownProps {
+                    urlStartsWith("/users")
+                }
+                dateLibrary(DateLibrary.KotlinxDatetime)
             }
         }
     }

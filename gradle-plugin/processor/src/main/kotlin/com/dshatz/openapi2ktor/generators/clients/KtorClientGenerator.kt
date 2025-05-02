@@ -192,7 +192,9 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                 }
             }
             .addFunctions(authSchemeSetters)
-            .addProperty(authSchemesProp)
+            .apply {
+                authSchemesProp?.let { addProperty(it) }
+            }
             .build()
         return FileSpec.builder(prefixClientName)
             .addType(clientType)

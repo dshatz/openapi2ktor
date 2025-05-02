@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "com.dshatz.openapi2ktor"
-version = project.findProperty("version") as String? ?: "0.1.0-SNAPSHOT1"
+version = project.findProperty("version") as? String ?: "0.1.0-SNAPSHOT1"
 
 kotlin {
     jvmToolchain(17)

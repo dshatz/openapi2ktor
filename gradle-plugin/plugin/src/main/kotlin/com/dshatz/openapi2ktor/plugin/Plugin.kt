@@ -3,6 +3,7 @@ package com.dshatz.openapi2ktor.plugin
 import com.dshatz.openapi2ktor.Cli
 import com.dshatz.openapi2ktor.GeneratorConfig
 import com.dshatz.openapi2ktor.AdditionalPropsConfig
+import com.dshatz.openapi2ktor.DateLibrary
 import com.dshatz.openapi2ktor.utils.capitalize
 import org.gradle.api.Action
 import org.gradle.api.DefaultTask
@@ -30,8 +31,7 @@ class Plugin : Plugin<Project> {
         project.afterEvaluate {
             extension.generators.names.all { generatorName ->
                 val generatorExtension = extension.generators.getByName(generatorName)
-                generatorExtension.setDefaultOutputDir(project.layout.buildDirectory.dir("openapi").get())
-                /*generatorExtension.config.convention(project.objects.newInstance(Generator.GeneratorConfigExtension::class.java, generatorExtension.name))*/
+                generatorExtension.setDefaultOutputDir(project.layout.buildDirectory.dir("openapi-$generatorName").get())
                 val task = project.tasks.register("generate${generatorExtension.name.capitalize()}Clients", GenerateTask::class.java) { task ->
                     task.group = "openapi3"
                     task.generatorConfig.set(generatorExtension.config.get().makeConfig())
@@ -50,7 +50,7 @@ class Plugin : Plugin<Project> {
                 }
                 project.pluginManager.withPlugin("org.jetbrains.kotlin.jvm") {
                     project.extensions.getByType(KotlinJvmProjectExtension::class.java).sourceSets.named("main") {
-                        it.kotlin.srcDir(generatorExtension.outputDir)
+                        it.kotlin.srcDir(generatorExtension.outputDir.dir("src/main/kotlin"))
                     }
                 }
                 project.tasks.withType(KotlinCompile::class.java).configureEach {
@@ -129,10 +129,14 @@ abstract class Generator @Inject constructor(
         @get:Nested
         internal val additionalPropsConfig: Property<AdditionalPropsConfigExtension> = objects.property(AdditionalPropsConfigExtension::class.java)
         internal val basePackage: Property<String> = objects.property(String::class.java)
+        internal val generateClients: Property<Boolean> = objects.property(Boolean::class.java)
+        internal val dateLibrary: Property<DateLibrary> = objects.property(DateLibrary::class.java)
 
         init {
             additionalPropsConfig.convention(objects.newInstance(AdditionalPropsConfigExtension::class.java))
             basePackage.convention(name)
+            generateClients.convention(true)
+            dateLibrary.convention(DateLibrary.String)
         }
 
         fun packageName(pkg: String) {
@@ -141,6 +145,14 @@ abstract class Generator @Inject constructor(
 
         fun parseUnknownProps(action: Action<AdditionalPropsConfigExtension>) {
             action.execute(additionalPropsConfig.get())
+        }
+
+        fun generateClients(generate: Boolean) {
+            generateClients.set(generate)
+        }
+
+        fun dateLibrary(dateLibrary: DateLibrary) {
+            this.dateLibrary.set(dateLibrary)
         }
     }
 }
@@ -180,5 +192,7 @@ internal fun Generator.GeneratorConfigExtension.makeConfig(): GeneratorConfig {
     return object: GeneratorConfig {
         override val additionalPropsConfig: AdditionalPropsConfig = this@makeConfig.additionalPropsConfig.get().makePropConfigExtension()
         override val basePackage: String = this@makeConfig.basePackage.get()
+        override val generateClients: Boolean = this@makeConfig.generateClients.get()
+        override val dateLibrary: DateLibrary = this@makeConfig.dateLibrary.get()
     }
 }

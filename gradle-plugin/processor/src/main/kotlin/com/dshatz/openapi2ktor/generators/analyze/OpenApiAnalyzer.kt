@@ -1,26 +1,32 @@
 package com.dshatz.openapi2ktor.generators.analyze
 
+import com.dshatz.openapi2ktor.DateLibrary
 import com.dshatz.openapi2ktor.GeneratorConfig
 import com.dshatz.openapi2ktor.generators.Type
-import com.dshatz.openapi2ktor.generators.clients.KtorClientGenerator
-import com.dshatz.openapi2ktor.generators.models.KotlinxCodeGenerator
-import com.reprezen.kaizen.oasparser.model3.OpenApi3
-import com.reprezen.kaizen.oasparser.model3.Operation
-import com.reprezen.kaizen.oasparser.model3.Schema
-import com.squareup.kotlinpoet.*
 import com.dshatz.openapi2ktor.generators.Type.Companion.simpleType
 import com.dshatz.openapi2ktor.generators.Type.WithTypeName.Object.PropInfo
 import com.dshatz.openapi2ktor.generators.TypeStore
 import com.dshatz.openapi2ktor.generators.TypeStore.OperationParam.ParamLocation
 import com.dshatz.openapi2ktor.generators.clients.IClientGenerator
+import com.dshatz.openapi2ktor.generators.clients.KtorClientGenerator
+import com.dshatz.openapi2ktor.generators.models.KotlinxCodeGenerator
 import com.dshatz.openapi2ktor.kdoc.DocTemplate
 import com.dshatz.openapi2ktor.utils.*
 import com.reprezen.jsonoverlay.Overlay
+import com.reprezen.kaizen.oasparser.model3.OpenApi3
+import com.reprezen.kaizen.oasparser.model3.Operation
 import com.reprezen.kaizen.oasparser.model3.Response
+import com.reprezen.kaizen.oasparser.model3.Schema
+import com.squareup.kotlinpoet.ClassName
+import com.squareup.kotlinpoet.FileSpec
+import com.squareup.kotlinpoet.asClassName
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import net.pwall.mustache.Template
+import java.time.Instant
+import java.time.LocalDate
 import kotlin.coroutines.coroutineContext
 import kotlin.time.measureTime
 
@@ -40,29 +46,42 @@ open class OpenApiAnalyzer(
             }
         }
 
-        val pathTime = measureTime {
+        val pathTime = if (config.generateClients) measureTime {
             withContext(Dispatchers.Default) {
                 api.gatherPathModels().joinAll()
             }
-        }
+        } else 0L
 
         println("Models: $modelsTime")
         println("Paths: $pathTime")
+        println("Packages: $packages")
 
         println(typeStore.printableSummary())
 
         typeStore.disambiguateTypeNames()
+        println("Skipping clients: ${!config.generateClients}")
 
-        val clientTemplates = clientGenerator.generateTemplates()
-        val fileSpecs = modelGenerator.generate() + clientGenerator.generate(api)
-        return@runBlocking fileSpecs to clientTemplates
+        val clientTemplates = if (config.generateClients) clientGenerator.generateTemplates() else emptyList()
+        val dateSerializerTemplate = when (config.dateLibrary) {
+            DateLibrary.JavaTime -> "javaTimeSerializers.kt"
+            DateLibrary.KotlinxDatetime -> "kotlinxTimeSerializers.kt"
+            else -> null
+        }
+        val dateTimeTemplate = dateSerializerTemplate?.let { templateFile ->
+            val template = this@OpenApiAnalyzer.javaClass.classLoader.getResourceAsStream(templateFile)!!.use {
+                Template.parse(it)
+            }
+            IClientGenerator.Template(packages.models, dateSerializerTemplate.substringBeforeLast(".kt"), template.processToString(mapOf("client" to packages.models)))
+        }
+        val fileSpecs = modelGenerator.generate() + (if (config.generateClients) clientGenerator.generate(api) else emptyList())
+        return@runBlocking fileSpecs to clientTemplates + listOfNotNull(dateTimeTemplate)
     }
 
     private suspend fun OpenApi3.gatherComponentModels() = withContext(coroutineContext) {
         schemas.map { (schemaName, schema) ->
             launch { processComponent(schemaName, schema) }
         }
-        processResponseComponents(responses)
+        if (config.generateClients) processResponseComponents(responses) else emptyList()
     }
 
     internal suspend fun processResponseComponents(responses: Map<String, Response>) = withContext(coroutineContext) {
@@ -326,7 +345,19 @@ open class OpenApiAnalyzer(
                             description = DocTemplate.of(description))
                             .register()
                     } else {
-                        String::class.asClassName().simpleType(isNullable).register()
+                        if (format == "date") {
+                            when (config.dateLibrary) {
+                                DateLibrary.JavaTime -> LocalDate::class.asClassName().simpleType(isNullable).register()
+                                DateLibrary.KotlinxDatetime -> ClassName("kotlinx.datetime", "LocalDate").simpleType(isNullable).register()
+                                DateLibrary.String -> String::class.asClassName().simpleType(isNullable).register()
+                            }
+                        } else if (format == "date-time") {
+                            when (config.dateLibrary) {
+                                DateLibrary.JavaTime -> Instant::class.asClassName().simpleType(isNullable).register()
+                                DateLibrary.KotlinxDatetime -> ClassName("kotlinx.datetime", "Instant").simpleType(isNullable).register()
+                                DateLibrary.String -> String::class.asClassName().simpleType(isNullable).register()
+                            }
+                        } else String::class.asClassName().simpleType(isNullable).register()
                     }
                 }
                 "boolean" -> Boolean::class.asClassName().simpleType(isNullable).register()
@@ -382,8 +413,11 @@ open class OpenApiAnalyzer(
                         val allProps = allOfSchemas.flatMap { it.makeProps(components).awaitProps().entries }.associate { it.key to it.value }
                         val allRequired = allOfSchemas.flatMap { it.requiredFields } + this.requiredFields
                         val defaultValues = allOfSchemas.flatMap { allOf -> allOf.properties.mapValues { it.value.default }.entries }.associate { it.key to it.value }
+                        if (allProps.isEmpty()) {
+                            error("allOf could not derive any properties: $this")
+                        }
                         Type.WithTypeName.Object(
-                            typeName = ClassName(packageName, nameForObject),
+                            typeName = ClassName(packageName, nameForObject.safePropName().capitalize() + "AllOf"),
                             props = allProps,
                             requiredProps = allRequired,
                             defaultValues = defaultValues,

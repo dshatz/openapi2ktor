@@ -23,6 +23,15 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
 
     internal lateinit var responseMappings: ResponseInterfaceResult
 
+    private val dateSerializers = mapOf(
+        ClassName("java.time", "LocalDate") to ClassName(packages.models, "JavaLocalDateSerializer"),
+        ClassName("java.time", "Instant") to ClassName(packages.models, "JavaInstantSerializer"),
+        ClassName("kotlinx.datetime", "LocalDate") to ClassName("kotlinx.datetime.serializers", "LocalDateIso8601Serializer"),
+        ClassName("kotlinx.datetime", "Instant") to ClassName(packages.models, "KotlinxInstantSerializer"),
+
+
+    )
+
     override fun generate(): List<FileSpec> {
 
         responseMappings = generateResponseInterfaces()
@@ -336,6 +345,10 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
             }
     }
 
+    private fun isDate(type: TypeName): Boolean {
+        return type in dateSerializers
+    }
+
     private fun Type.WithTypeName.Object.makeDataClassProps(
         typeStore: TypeStore,
         name: String,
@@ -355,8 +368,6 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
         }
 
         val actualType = if (type is Type.Reference) typeStore.resolveReference(type.jsonReference) else type
-        val isNullable = actualType.makeTypeName().isNullable
-
 
         val default = actualType.makeDefaultValueCodeBlock(isRequired, defaultValue)
         val finalType = actualType.nullableIfNoDefault(isRequired, default)
@@ -365,6 +376,10 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
             .apply {
                 if (propInfo.doc != null) {
                     addKdoc(propInfo.doc.toCodeBlock(::findConcreteType))
+                }
+                val simpleTypeOrNull = (actualType as? Type.SimpleType)?.kotlinType?.copy(nullable = false)
+                if (simpleTypeOrNull != null && isDate(simpleTypeOrNull)) {
+                    addAnnotation(AnnotationSpec.builder(Serializable::class.asClassName()).addMember(CodeBlock.of("%T::class", dateSerializers[simpleTypeOrNull]!!)).build())
                 }
             }
             .initializer(name)

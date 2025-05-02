@@ -44,16 +44,27 @@ data class EntryPoint(
 interface GeneratorConfig: Serializable {
     val additionalPropsConfig: AdditionalPropsConfig
     val basePackage: String
+    val generateClients: Boolean
+    val dateLibrary: DateLibrary
 
     companion object {
         fun default(): GeneratorConfig = DefaultGeneratorConfig
     }
 }
+
+enum class DateLibrary {
+    JavaTime,
+    KotlinxDatetime,
+    String
+}
+
 object DefaultGeneratorConfig: GeneratorConfig {
     override val additionalPropsConfig: AdditionalPropsConfig = object: AdditionalPropsConfig {
         override val additionalPropPatterns: List<String> = emptyList()
     }
     override val basePackage: String = ""
+    override val generateClients: Boolean = true
+    override val dateLibrary: DateLibrary = DateLibrary.String
 }
 
 interface AdditionalPropsConfig: Serializable {

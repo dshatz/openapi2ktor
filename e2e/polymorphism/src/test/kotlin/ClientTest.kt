@@ -3,8 +3,7 @@ import com.denisbrandi.netmock.NetMockRequest
 import com.denisbrandi.netmock.NetMockResponseBuilder
 import com.denisbrandi.netmock.engine.NetMockEngine
 import kotlinx.coroutines.test.runTest
-import sample.client.orders.OrdersClient
-import sample.client.users.UsersClient
+import sample.client.Client
 import sample.models.components.parameters.UserTypeParam
 import sample.models.components.schemas.AdminUser.AdminUser
 import sample.models.paths.users.get.response.GetUsersResponse200
@@ -15,15 +14,16 @@ import kotlin.test.assertNull
 
 class ClientTest {
     private val netMock = NetMockEngine()
+    private val client = Client(netMock)
 
     @Test
     fun `list of oneof where one type is nullable`() = runTest {
-        val users = UsersClient(netMock, baseUrl = "http://localhost")
+        val users = Client(netMock, baseUrl = "http://localhost")
         mockGet("/users/alice", """
             null
         """.trimIndent())
 
-        users.getByName("alice").dataOrNull().also {
+        users.getUsersByName("alice").dataOrNull().also {
             assertNull(it)
         }
 
@@ -43,7 +43,7 @@ class ClientTest {
             ]
         """.trimIndent())
 
-        users.get(10).dataOrNull().also {
+        users.getUsers(10).dataOrNull().also {
             val data = assertIs<GetUsersResponse200>(it).get()
             assertEquals(3, data.size)
             assertIs<AdminUser>(data[1])
@@ -54,12 +54,11 @@ class ClientTest {
 
     @Test
     fun `test with api key`() = runTest {
-        val orders = OrdersClient(netMock)
-        orders.setApiKeyAuth("my_secret_key")
+        client.setApiKeyAuth("my_secret_key")
         interceptRequest("/orders") {
             assertEquals("my_secret_key", mandatoryHeaders["X-MBX-APIKEY"])
         }
-        runCatching { orders.get(UserTypeParam.ADMIN) } // Will fail because it's mocked.
+        runCatching { client.getOrders(UserTypeParam.ADMIN) } // Will fail because it's mocked.
     }
 
     private fun mockGet(relPath: String, response: String, status: Int = 200) {

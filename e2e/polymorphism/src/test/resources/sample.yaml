@@ -40,6 +40,12 @@ components:
           - week
         default: day
   schemas:
+    EnumSchema:
+      name: EnumSchema
+      type: string
+      enum:
+        - value1
+        - value2
     User:
       nullable: true
       description: Normal user
@@ -50,6 +56,11 @@ components:
           type: string
         user_type:
           type: string
+        registered_on:
+          type: string
+          format: date
+        enum:
+          "$ref": '#/components/schemas/EnumSchema'
     AdminUser:
       properties:
         id:
@@ -60,6 +71,9 @@ components:
           type: string
         beard:
           type: boolean
+        registered_on:
+          type: string
+          format: date-time
         events:
           type: array
           default:
