@@ -124,7 +124,7 @@ class AnalyzerTest: BaseTestClass() {
         val op = api.paths["/users"]!!.post
         val response = op.responses["400"]!!
         analyzer.processPathResponse(op, response, "/users", 400, verb = "post")
-        assertGenerated("PostUsersResponse400", packages.models + ".paths.users.post.response") {
+        assertGenerated("PostUsersResponse400AllOf", packages.models + ".paths.users.post.response") {
             assertObject {
                 // allOf
                 assertUser()

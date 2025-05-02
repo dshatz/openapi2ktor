@@ -46,6 +46,45 @@ This task will be automatically executed when there are any changes to the input
 ## Additional configuration
 You can customize some of the behaviour of the generators. Please open an issue if you need additional configuration.
 
+### Disable Ktor plugin generation
+By default, both models and clients will be generated.
+To generate only kotlin models:
+```kotlin
+create("example") {
+    inputSpec.set(file("..."))
+    config {
+        generateClients(false) 
+    }
+}
+```
+
+### Date handling
+By default, `date` and `date-time` fields will be generated as Strings.
+
+You can configure this behaviour:
+```kotlin
+create("example") {
+    inputSpec.set(file("..."))
+    config {
+        generateClients(false)
+        dateLibrary(DateLibrary.JavaTime)
+        // or dateLibrary(DateLibrary.KotlinxDatetime)
+        // or default dateLibrary(DateLibrary.String)
+    }
+}
+```
+
+Both kotlinx datetime and Java time will have ISO8601 serializers applied. 
+For example, these strings will be valid:
+ - `"2035-02-02T08:00:00+0300"`
+ - `"2025-02-02T08:00:00Z"`
+ - `"2025-02-02"` (for property with `format: date`)
+
+And these invalid:
+ - `"2035-02-02T08:00:00"`
+
+To support other formats, please create an issue. In the meantime, use `DateLibrary.String` and implement your own parsing.
+
 ### Additional properties
 Some openapi spec files you find on the internet are not exactly complete. In case the API gives you an object with an unknown field, it will be dropped.
 [Kotlinx Serialization does not support this]([url](https://github.com/Kotlin/kotlinx.serialization/issues/1978)) out of the box, but this plugin gives you a possibility to not lose those fields.
