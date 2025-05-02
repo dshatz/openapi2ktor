@@ -139,7 +139,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
         val constructor = FunSpec.constructorBuilder().addParameters(params).build()
         val props = params.filter { it.name != "json" }.map { PropertySpec.builder(it.name, it.type, KModifier.PRIVATE).initializer(it.name).build() }
 
-        val authSchemesProp = PropertySpec.builder("authSchemes", MUTABLE_MAP.parameterizedBy(String::class.asTypeName(), authSchemeType(packages)), KModifier.PRIVATE)
+        val authSchemesProp = if (securitySchemes.isNotEmpty()) PropertySpec.builder("authSchemes", MUTABLE_MAP.parameterizedBy(String::class.asTypeName(), authSchemeType(packages)), KModifier.PRIVATE)
             .initializer(
                 CodeBlock.builder()
                     .beginControlFlow("%M", MemberName("kotlin.collections", "buildMap"))
@@ -151,7 +151,8 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                     .endControlFlow() // end buildMap
                     .add(".toMutableMap()")
                     .build()
-            ).build()
+            ).build() else null
+
         val authSchemeSetters = securitySchemes.map { (name, scheme) ->
            scheme.generateSetter(name)
         }
