@@ -25,7 +25,7 @@ plugins {
 
 ## 2. Configure what to generate
 ```kotlin
-openapi {
+openapi3 {
   generators {
      // Give your api a name.
     create("binance") {
