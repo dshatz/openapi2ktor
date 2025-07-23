@@ -1,7 +1,6 @@
 package com.dshatz.openapi2ktor.utils
 
 import com.reprezen.kaizen.oasparser.model3.Path
-import kotlinx.serialization.builtins.MapEntrySerializer
 
 fun analyzePaths(paths: Map<String, Path>) {
     val tree = buildPathTree(paths)
@@ -89,5 +88,9 @@ internal fun buildPathTree(paths: Map<String, Path>): TreeNode {
     }
 
     return root
+}
+
+fun String.removeLeadingSlash(): String {
+    return this.dropWhile { it == '/' }
 }
 

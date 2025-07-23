@@ -294,7 +294,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                             .beginControlFlow("try")
                             .beginControlFlow("val response = httpClient.%M(%L)",
                                 MemberName("io.ktor.client.request", verb, isExtension = true),
-                                CodeBlock.of("%S%L", pathString, CodeBlock.builder().apply {
+                                CodeBlock.of("%S%L", pathString.removeLeadingSlash(), CodeBlock.builder().apply {
                                     // Replace path params in url of client.<verb>(url)
                                     paramSpecs
                                         .filter { it.key.where == ParamLocation.PATH }
