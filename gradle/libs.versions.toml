@@ -1,7 +1,8 @@
 [versions]
 kotlinxSerializationJson = "1.8.0"
 ktor = "3.0.3"
-kotlin = "2.1.10"
+kotlin = "2.1.21"
+coroutines = "1.10.2"
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
@@ -18,6 +19,8 @@ ktor-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = 
 ktor-log = { module = "io.ktor:ktor-client-logging", version.ref = "ktor" }
 ktor-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
 logback = { module = "ch.qos.logback:logback-classic", version = "1.5.16" }
+coroutines = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines"}
 
 [bundles]
 ktor = ["ktor-json", "ktor-cio", "ktor-core", "ktor-contentnegotiation", "ktor-log"]

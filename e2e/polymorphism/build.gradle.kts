@@ -1,17 +1,16 @@
 import com.dshatz.openapi2ktor.DateLibrary
 
 plugins {
-    kotlin("jvm")
-    kotlin("plugin.serialization")
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.serial)
     alias(libs.plugins.local.plugin)
 }
 
 
 dependencies {
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
+    implementation(libs.serial)
     implementation(libs.bundles.ktor)
-    implementation("com.google.devtools.ksp:symbol-processing-api:2.1.10-1.0.30")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.0")
+    testImplementation(libs.coroutines.test)
     testImplementation("io.github.denisbronx.netmock:netmock-engine:0.7.0")
     implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.6.2")
     testImplementation(kotlin("test"))

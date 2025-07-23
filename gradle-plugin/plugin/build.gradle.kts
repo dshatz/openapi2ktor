@@ -25,7 +25,7 @@ gradlePlugin {
 
 dependencies {
     implementation(project(":processor"))
-    implementation("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.10")
+    implementation("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.21")
 }
 
 mavenPublishing {
