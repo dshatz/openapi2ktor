@@ -341,7 +341,7 @@ class AnalyzerTest: BaseTestClass() {
             assertEquals(TypeStore.OperationParam.ParamLocation.QUERY, it.where)
             assertFalse(it.isRequired)
         }
-        pathId.assertParameterRegistered("min_age") {
+        pathId.assertParameterRegistered("minAge") {
             assertType(Int::class.type())
         }.also {
             assertEquals(TypeStore.OperationParam.ParamLocation.QUERY, it.where)
@@ -354,7 +354,7 @@ class AnalyzerTest: BaseTestClass() {
         val op = api.paths["/orders"]!!.get
         val pathId = PathId("/orders", "get")
         analyzer.calculateParameters(pathId, op)
-        assertGenerated("UserTypeParam", packages.models + ".components.parameters") {}
+        assertGenerated("UserType", packages.models + ".components.parameters") {}
     }
 
     @Test

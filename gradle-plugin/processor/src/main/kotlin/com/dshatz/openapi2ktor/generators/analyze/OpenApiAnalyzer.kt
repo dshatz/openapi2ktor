@@ -125,7 +125,7 @@ open class OpenApiAnalyzer(
     internal suspend fun calculateParameters(pathID: TypeStore.PathId, operation: Operation) {
         val params = operation.parameters.map { param ->
             param.schema.makeType(
-                param.name/*param.jsonReference.split("/").last().safePropName()*/,
+                param.name.safePropName()/*param.jsonReference.split("/").last().safePropName()*/,
                 param.jsonReference,
                 false,
                 operation.isParameterAReference(param.name),
@@ -137,8 +137,8 @@ open class OpenApiAnalyzer(
                     "header" -> ParamLocation.HEADER
                     else -> error("What is this param location? ${param.`in`}")
                 }
-                println("Adding parameter ${param.name}: ${paramType.simpleName()}")
-                TypeStore.OperationParam(param.name, paramType, param.isRequired, where)
+                println("Adding parameter ${param.name.safePropName()}: ${paramType.simpleName()}")
+                TypeStore.OperationParam(param.name.safePropName(), paramType, param.isRequired, where)
             }
         }
         typeStore.registerOperationParams(pathID, params)

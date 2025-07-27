@@ -4,6 +4,7 @@ import com.denisbrandi.netmock.NetMockResponseBuilder
 import com.denisbrandi.netmock.engine.NetMockEngine
 import kotlinx.coroutines.test.runTest
 import sample.client.Client
+import sample.models.components.parameters.UserType
 import sample.models.components.parameters.UserTypeParam
 import sample.models.components.schemas.AdminUser.AdminUser
 import sample.models.paths.users.get.response.GetUsersResponse200
@@ -58,7 +59,7 @@ class ClientTest {
         interceptRequest("/orders") {
             assertEquals("my_secret_key", mandatoryHeaders["X-MBX-APIKEY"])
         }
-        runCatching { client.getOrders(UserTypeParam.ADMIN) } // Will fail because it's mocked.
+        runCatching { client.getOrders(UserType.ADMIN) } // Will fail because it's mocked.
     }
 
     private fun mockGet(relPath: String, response: String, status: Int = 200) {
