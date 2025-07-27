@@ -1,6 +1,8 @@
 import binance.client.HttpResult
 import binance.client.api.v3.V3Client
 import binance.models.paths.api.v3.avgPrice.get.response.GetApiV3AvgPriceResponse400
+import binance.models.paths.api.v3.klines.get.parameters.i1.`1`
+import binance.models.paths.api.v3.klines.get.parameters.i1.Interval
 import io.ktor.client.engine.cio.*
 import io.ktor.client.engine.mock.*
 import io.ktor.client.plugins.logging.*
@@ -71,6 +73,15 @@ class BinanceTest {
 
     @Test
     fun `handle unknown error response`() = runTest {  }
+
+    @Test
+    fun `test query param from enum`() = runTest {
+        val mock = Mocker(binance)
+        mock.makeRequest(req = { getKlines("BTCEUR", interval = Interval.`1D`) }) {
+            assertHasQueryParam("symbol", "BTCEUR")
+            assertHasQueryParam("interval", "1d")
+        }
+    }
 
     data class Mocker(val normalClient: V3Client, val mockEngine: MockEngine = MockEngine { respondBadRequest() }) {
         val mockClient = V3Client(mockEngine)

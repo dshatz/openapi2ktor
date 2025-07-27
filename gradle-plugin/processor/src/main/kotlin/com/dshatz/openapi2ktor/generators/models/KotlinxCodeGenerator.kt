@@ -336,7 +336,15 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
                             .addAnnotation(
                                 AnnotationSpec.builder(SerialName::class)
                                     .addMember("%S", value.toString()).build()
-                            ).build()
+                            )
+                            .addFunction(
+                                FunSpec.builder("toString")
+                                .returns(STRING)
+                                .addModifiers(KModifier.OVERRIDE)
+                                .addCode(CodeBlock.of("return %S", value.toString()))
+                                    .build()
+                            )
+                            .build()
                     )
                 }
                 FileSpec.builder(classname)
