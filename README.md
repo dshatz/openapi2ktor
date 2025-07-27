@@ -9,7 +9,7 @@ This project aims to generate easy-to-use and portable Ktor clients from OpenApi
 
 **libs.version.toml**
 ```toml
-openapi = { id = "com.dshatz.openapi2ktor", version = "1.0.3" }
+openapi = { id = "com.dshatz.openapi2ktor", version = "1.0.4" }
 ```
 
 **build.gradle.kts**
@@ -19,9 +19,11 @@ plugins {
   alias(libs.plugins.openapi)
 
   // If you are not using version catalog
-  id("com.dshatz.openapi2ktor") version "1.0.3"
+  id("com.dshatz.openapi2ktor") version "1.0.4"
 }
 ```
+
+**Also include ktor client and kotlin serialization.**
 
 ## 2. Configure what to generate
 ```kotlin
@@ -120,10 +122,14 @@ Note: this may have a performance penalty so only enable on urls which are known
 The generated client constructor's signature is identical to that of ktor's `HttpClient` except that it also takes an optional `baseUrl` argument.
 You can access the baseUrls through `<name>.client.Servers` enum or pass a custom `String`.
 
+> [!IMPORTANT]  
+> To customize Json format, pass your own `kotlinx.serialization.Json` instance to the client constructor. 
+
+
 ```kotlin
 val apiClient = V3Client(engine = CIO)
 val apiClientStaging = V3Client(engine = CIO, baseUrl = "https://staging.example.com")
-val apiClientProduction = V3Client(engine = CIO, baseUrl = Servers.PRODUCTION)
+val apiClientProduction = V3Client(engine = CIO, baseUrl = Servers.PRODUCTION, json = Json { ignoreUnknownKeys = true ))
 ```
 
 ## Authentication
