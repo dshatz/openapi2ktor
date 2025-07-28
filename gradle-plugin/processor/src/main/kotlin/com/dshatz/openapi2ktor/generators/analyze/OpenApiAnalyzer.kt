@@ -138,7 +138,7 @@ open class OpenApiAnalyzer(
                     else -> error("What is this param location? ${param.`in`}")
                 }
                 println("Adding parameter ${param.name.safePropName()}: ${paramType.simpleName()}")
-                TypeStore.OperationParam(param.name.safePropName(), paramType, param.isRequired, where)
+                TypeStore.OperationParam(param.name, paramType, param.isRequired, where)
             }
         }
         typeStore.registerOperationParams(pathID, params)

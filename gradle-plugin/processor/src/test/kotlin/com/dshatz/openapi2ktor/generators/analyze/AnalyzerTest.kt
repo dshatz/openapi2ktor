@@ -341,7 +341,7 @@ class AnalyzerTest: BaseTestClass() {
             assertEquals(TypeStore.OperationParam.ParamLocation.QUERY, it.where)
             assertFalse(it.isRequired)
         }
-        pathId.assertParameterRegistered("minAge") {
+        pathId.assertParameterRegistered("min_age") {
             assertType(Int::class.type())
         }.also {
             assertEquals(TypeStore.OperationParam.ParamLocation.QUERY, it.where)
