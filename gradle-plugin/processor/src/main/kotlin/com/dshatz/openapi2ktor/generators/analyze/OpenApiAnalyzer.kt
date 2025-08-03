@@ -52,14 +52,18 @@ open class OpenApiAnalyzer(
             }
         } else 0L
 
-        println("Models: $modelsTime")
+        /*println("Models: $modelsTime")
         println("Paths: $pathTime")
-        println("Packages: $packages")
+        println("Packages: $packages")*/
 
-        println(typeStore.printableSummary())
+//        println(typeStore.printableSummary())
 
         typeStore.disambiguateTypeNames()
-        println("Skipping clients: ${!config.generateClients}")
+        if (!config.generateClients) {
+            println("Will not generate Ktor clients.")
+        } else {
+            println("Will generate Ktor clients.")
+        }
 
         val clientTemplates = if (config.generateClients) clientGenerator.generateTemplates() else emptyList()
         val dateSerializerTemplate = when (config.dateLibrary) {
@@ -137,7 +141,7 @@ open class OpenApiAnalyzer(
                     "header" -> ParamLocation.HEADER
                     else -> error("What is this param location? ${param.`in`}")
                 }
-                println("Adding parameter ${param.name.safePropName()}: ${paramType.simpleName()}")
+//                println("Adding parameter ${param.name.safePropName()}: ${paramType.simpleName()}")
                 TypeStore.OperationParam(param.name, paramType, param.isRequired, where)
             }
         }
@@ -248,7 +252,7 @@ open class OpenApiAnalyzer(
         referenceData: ReferenceMetadata?,
         wrapMode: WrapMode
     ): Type {
-        println("Entering ${"component".takeIf { components } ?: ""} ${jsonReference.cleanJsonReference()}")
+//        println("Entering ${"component".takeIf { components } ?: ""} ${jsonReference.cleanJsonReference()}")
 
         val packageName = makePackageName(jsonReference, packages.models)
 
@@ -433,7 +437,6 @@ open class OpenApiAnalyzer(
                             error("Reference in the wrong place!")
                         } else if (components) {
                             // Component definition
-//                            println("Component def found! ${getComponentRef()}")
                             val className = makePackageName(getComponentRef()!!, packages.models)
                             makeObject(className.substringAfterLast("."), components).register()
                         } else {

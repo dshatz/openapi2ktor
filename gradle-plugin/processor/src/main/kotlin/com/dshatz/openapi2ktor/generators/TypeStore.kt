@@ -26,13 +26,11 @@ class TypeStore {
 
 
     fun registerType(jsonReference: String, type: Type) {
-        println("Registering type! ${type.simpleName()}; ${jsonReference.cleanJsonReference()}")
         types[jsonReference.cleanJsonReference()] = type
     }
 
     fun registerComponentSchema(referenceId: String, type: Type) {
         if (type is Type.Reference) error("Should not be a reference for component schema $referenceId")
-        println("Registering component schema! $referenceId")
         types[referenceId.cleanJsonReference()] = type
     }
 
@@ -62,7 +60,6 @@ class TypeStore {
     }
 
     fun resolveReference(jsonReference: String): Type {
-        println("Resolving $jsonReference...")
         return getTypes()[jsonReference] ?: run {
             printTypes()
             error("Could not resolve reference $jsonReference")
@@ -186,7 +183,6 @@ class TypeStore {
             .filterValuesIsInstance<String, Type, Type.WithTypeName>()
             .findDuplicates { it.value.typeName }
         for ((type, duplicatesForType) in duplicates) {
-            println("Found TypeName $type with ${duplicatesForType.size} jsonRefs. Deduplicating...")
             duplicatesForType.mapIndexed { idx, (jsonRef, currentType) ->
                 jsonRef to currentType.withTypeName(currentType.typeName.updateSimpleName { it + idx })
             }.forEach {
