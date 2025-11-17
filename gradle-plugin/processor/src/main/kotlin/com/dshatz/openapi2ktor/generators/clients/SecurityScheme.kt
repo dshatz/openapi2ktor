@@ -9,7 +9,6 @@ import com.squareup.kotlinpoet.MemberName
 import com.squareup.kotlinpoet.ParameterSpec
 import com.squareup.kotlinpoet.asTypeName
 import kotlinx.serialization.DeserializationStrategy
-import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonClassDiscriminator
@@ -17,8 +16,6 @@ import kotlinx.serialization.json.JsonContentPolymorphicSerializer
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.serializer
-import kotlin.reflect.typeOf
 
 class SecuritySchemeSerializer: JsonContentPolymorphicSerializer<SecurityScheme>(SecurityScheme::class) {
     override fun selectDeserializer(element: JsonElement): DeserializationStrategy<SecurityScheme> {
@@ -51,6 +48,7 @@ sealed class SecurityScheme() {
 @Serializable
 @JsonClassDiscriminator("scheme")
 sealed class Http(): SecurityScheme() {
+    @Serializable
     @SerialName("bearer")
     data class Bearer(val bearerFormat: String, override val description: String = ""): Http() {
         override fun generateSetter(name: String): FunSpec {
@@ -64,6 +62,7 @@ sealed class Http(): SecurityScheme() {
         }
     }
 
+    @Serializable
     @SerialName("basic")
     class Basic(override val description: String = "") : Http() {
         override fun generateSetter(name: String): FunSpec {
