@@ -1,15 +1,14 @@
 package com.dshatz.openapi2ktor.plugin
 
-import com.dshatz.openapi2ktor.Cli
-import com.dshatz.openapi2ktor.GeneratorConfig
 import com.dshatz.openapi2ktor.AdditionalPropsConfig
+import com.dshatz.openapi2ktor.Cli
 import com.dshatz.openapi2ktor.DateLibrary
+import com.dshatz.openapi2ktor.GeneratorConfig
 import com.dshatz.openapi2ktor.utils.capitalize
 import org.gradle.api.Action
 import org.gradle.api.DefaultTask
 import org.gradle.api.Named
 import org.gradle.api.NamedDomainObjectContainer
-import org.gradle.api.NamedDomainObjectList
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.file.Directory
@@ -44,7 +43,6 @@ class Plugin : Plugin<Project> {
                     if (kotlinExtension != null) {
                         project.afterEvaluate {
                             kotlinExtension.sourceSets.getByName("commonMain").kotlin.srcDir(generatorExtension.outputDir.dir("src/main/kotlin"))
-                            kotlinExtension.sourceSets.getByName("commonTest").kotlin.srcDir(generatorExtension.outputDir.dir("src/main/kotlin"))
                         }
                     }
                 }
