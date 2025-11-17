@@ -9,9 +9,8 @@ val input = "${project.projectDir}/src/test/resources/swagger.yml"
 dependencies {
     implementation(libs.serial)
     implementation(libs.bundles.ktor)
-    testImplementation(libs.ktor.mock)
-    testImplementation(libs.coroutines.test)
     testImplementation(kotlin("test"))
+    testImplementation(libs.coroutines.test)
 }
 
 openapi3 {
