@@ -5,16 +5,44 @@ import com.dshatz.openapi2ktor.generators.Type
 import com.dshatz.openapi2ktor.generators.TypeStore
 import com.dshatz.openapi2ktor.generators.TypeStore.OperationParam.ParamLocation
 import com.dshatz.openapi2ktor.kdoc.DocTemplate
-import com.dshatz.openapi2ktor.utils.*
+import com.dshatz.openapi2ktor.utils.Packages
+import com.dshatz.openapi2ktor.utils.TreeNode
+import com.dshatz.openapi2ktor.utils.buildPathTree
+import com.dshatz.openapi2ktor.utils.capitalize
+import com.dshatz.openapi2ktor.utils.cleanJsonReference
+import com.dshatz.openapi2ktor.utils.getAllPaths
+import com.dshatz.openapi2ktor.utils.isSuccessCode
+import com.dshatz.openapi2ktor.utils.makeRequestFunName
+import com.dshatz.openapi2ktor.utils.matches
+import com.dshatz.openapi2ktor.utils.removeLeadingSlash
+import com.dshatz.openapi2ktor.utils.safePropName
+import com.dshatz.openapi2ktor.utils.sanitizeForKdoc
 import com.reprezen.jsonoverlay.Overlay
 import com.reprezen.kaizen.oasparser.model3.OpenApi3
 import com.reprezen.kaizen.oasparser.model3.Path
 import com.reprezen.kaizen.oasparser.model3.Response
-import com.squareup.kotlinpoet.*
+import com.squareup.kotlinpoet.AnnotationSpec
+import com.squareup.kotlinpoet.ClassName
+import com.squareup.kotlinpoet.CodeBlock
+import com.squareup.kotlinpoet.FileSpec
+import com.squareup.kotlinpoet.FunSpec
+import com.squareup.kotlinpoet.KModifier
+import com.squareup.kotlinpoet.LambdaTypeName
+import com.squareup.kotlinpoet.MUTABLE_MAP
+import com.squareup.kotlinpoet.MemberName
+import com.squareup.kotlinpoet.ParameterSpec
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
-import io.ktor.client.*
-import io.ktor.client.engine.*
-import io.ktor.client.plugins.*
+import com.squareup.kotlinpoet.PropertySpec
+import com.squareup.kotlinpoet.STAR
+import com.squareup.kotlinpoet.TypeName
+import com.squareup.kotlinpoet.TypeSpec
+import com.squareup.kotlinpoet.UNIT
+import com.squareup.kotlinpoet.asTypeName
+import io.ktor.client.HttpClient
+import io.ktor.client.HttpClientConfig
+import io.ktor.client.engine.HttpClientEngine
+import io.ktor.client.engine.HttpClientEngineFactory
+import io.ktor.client.plugins.ClientRequestException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import net.pwall.mustache.Template
@@ -263,7 +291,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                         .build()
                 }
 
-                val description = operation.description
+                val description = operation?.description?.sanitizeForKdoc()
                 val funName = pathID.makeRequestFunName(dropPrefix = prefix)
 
                 val exceptionTypeName = funName.capitalize() + "Exception"
