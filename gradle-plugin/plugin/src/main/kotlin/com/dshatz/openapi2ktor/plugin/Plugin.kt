@@ -21,6 +21,9 @@ import org.gradle.api.tasks.*
 import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompileCommon
+import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
+import org.jetbrains.kotlin.gradle.tasks.KotlinNativeCompile
 import javax.inject.Inject
 
 class Plugin : Plugin<Project> {
@@ -43,6 +46,15 @@ class Plugin : Plugin<Project> {
                     if (kotlinExtension != null) {
                         project.afterEvaluate {
                             kotlinExtension.sourceSets.getByName("commonMain").kotlin.srcDir(generatorExtension.outputDir.dir("src/main/kotlin"))
+                        }
+                        project.tasks.withType(KotlinCompileCommon::class.java).configureEach {
+                            it.dependsOn(task.get())
+                        }
+                        project.tasks.withType(KotlinNativeCompile::class.java).configureEach {
+                            it.dependsOn(task.get())
+                        }
+                        project.tasks.withType(KotlinJvmCompile::class.java).configureEach {
+                            it.dependsOn(task.get())
                         }
                     }
                 }
