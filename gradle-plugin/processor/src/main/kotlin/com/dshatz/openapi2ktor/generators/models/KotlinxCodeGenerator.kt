@@ -124,7 +124,7 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
             .map {
                 val superclass = responseMappings.responseSuperclasses[it]
                 val exception = typeStore.shouldExtendException(it)
-                generatePrimitiveWrapper(it, superclass ?: (Exception::class.asTypeName().takeIf { exception }))
+                generatePrimitiveWrapper(it, superclass ?: (ClassName("kotlin", "Exception").takeIf { exception }))
             }
     }
 
@@ -190,7 +190,7 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
                 .apply {
                     type.description?.let { addKdoc(type.description.toCodeBlock(::findConcreteType)) }
                     if (exception) {
-                        superclass(Exception::class)
+                        superclass(ClassName("kotlin", "Exception"))
                     }
                 }
                 .addAnnotation(Serializable::class)
@@ -278,7 +278,7 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
                 TypeSpec.classBuilder(iResponseClass).addModifiers(KModifier.SEALED).build()
             }
             val iError = iErrorClass?.let {
-                TypeSpec.classBuilder(iErrorClass).addModifiers(KModifier.SEALED).superclass(Exception::class).build()
+                TypeSpec.classBuilder(iErrorClass).addModifiers(KModifier.SEALED).superclass(ClassName("kotlin", "Exception")).build()
             }
             val successWrappedTypes = iResponseClass?.let {
                 generatePrimitiveResponseWrappers(successTypes.values, iResponseClass)

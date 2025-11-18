@@ -377,7 +377,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
     private fun buildResponseException(exceptionTypeName: String, errorResponseClass: TypeName): TypeSpec {
         return TypeSpec.classBuilder(exceptionTypeName)
             .addModifiers(KModifier.DATA)
-            .superclass(Exception::class)
+            .superclass(ClassName("kotlin", "Exception"))
             .addProperties(listOf(
                 PropertySpec.builder("body", errorResponseClass)
                     .initializer("body")
