@@ -1,6 +1,5 @@
 package com.dshatz.openapi2ktor.generators
 
-import com.dshatz.openapi2ktor.generators.Type.Companion.simpleType
 import com.dshatz.openapi2ktor.utils.*
 import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
@@ -16,8 +15,14 @@ class TypeStore {
 
     private val responseMapping: MutableMap<PathId, MutableMap<Int, ResponseTypeInfo>> = mutableMapOf()
     private val responseInterfaces: MutableMap<PathId, Pair<ClassName?, ClassName?>> = mutableMapOf()
+    private val requestBodies: MutableMap<PathId, RequestBody> = mutableMapOf()
     private val operationParameters: MutableMap<PathId, List<OperationParam>> = mutableMapOf()
     private val exceptionTypes: MutableSet<Type> = mutableSetOf()
+
+    data class RequestBody(
+        val type: Type,
+        val mediaType: String
+    )
 
     private val typesUsedInResponses by lazy { responseMapping.asSequence()
         .flatMap { it.value.values.map { type -> type to it.key } }
@@ -112,6 +117,15 @@ class TypeStore {
 
     fun registerResponseInterface(path: PathId, successInterface: ClassName?, errorInterface: ClassName?) {
         responseInterfaces[path] = successInterface to errorInterface
+    }
+
+
+    fun registerRequestBody(path: PathId, requestBody: Type, mediaType: String) {
+        requestBodies[path] = RequestBody(requestBody, mediaType)
+    }
+
+    fun getRequestBody(pathId: PathId): RequestBody? {
+        return requestBodies[pathId]
     }
 
     fun getResponseErrorInterface(path: PathId) = responseInterfaces[path]?.second

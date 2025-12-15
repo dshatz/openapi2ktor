@@ -11,8 +11,33 @@ import com.dshatz.openapi2ktor.generators.clients.IClientGenerator
 import com.dshatz.openapi2ktor.generators.clients.KtorClientGenerator
 import com.dshatz.openapi2ktor.generators.models.KotlinxCodeGenerator
 import com.dshatz.openapi2ktor.kdoc.DocTemplate
-import com.dshatz.openapi2ktor.utils.*
+import com.dshatz.openapi2ktor.utils.Packages
+import com.dshatz.openapi2ktor.utils.ReferenceMetadata
+import com.dshatz.openapi2ktor.utils.arrayItemRefData
+import com.dshatz.openapi2ktor.utils.capitalize
+import com.dshatz.openapi2ktor.utils.cleanJsonReference
+import com.dshatz.openapi2ktor.utils.getComponentRef
+import com.dshatz.openapi2ktor.utils.getReferenceForResponse
+import com.dshatz.openapi2ktor.utils.getResponseComponentRefInfo
+import com.dshatz.openapi2ktor.utils.isComponentSchemaRoot
+import com.dshatz.openapi2ktor.utils.isParameterAReference
+import com.dshatz.openapi2ktor.utils.isPartOfComponentSchema
+import com.dshatz.openapi2ktor.utils.isReference
+import com.dshatz.openapi2ktor.utils.isResponseAReference
+import com.dshatz.openapi2ktor.utils.isSuccessCode
+import com.dshatz.openapi2ktor.utils.jsonReference
+import com.dshatz.openapi2ktor.utils.makePackageName
+import com.dshatz.openapi2ktor.utils.makeRequestBodyModelName
+import com.dshatz.openapi2ktor.utils.makeResponseModelName
+import com.dshatz.openapi2ktor.utils.mapPaths
+import com.dshatz.openapi2ktor.utils.modelPackageName
+import com.dshatz.openapi2ktor.utils.oneOfRefData
+import com.dshatz.openapi2ktor.utils.propRefData
+import com.dshatz.openapi2ktor.utils.safeEnumEntryName
+import com.dshatz.openapi2ktor.utils.safePropName
+import com.dshatz.openapi2ktor.utils.sanitizeForKdoc
 import com.reprezen.jsonoverlay.Overlay
+import com.reprezen.kaizen.oasparser.model3.MediaType
 import com.reprezen.kaizen.oasparser.model3.OpenApi3
 import com.reprezen.kaizen.oasparser.model3.Operation
 import com.reprezen.kaizen.oasparser.model3.Response
@@ -20,7 +45,15 @@ import com.reprezen.kaizen.oasparser.model3.Schema
 import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.FileSpec
 import com.squareup.kotlinpoet.asClassName
-import kotlinx.coroutines.*
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -115,7 +148,7 @@ open class OpenApiAnalyzer(
     }
 
     private suspend fun OpenApi3.gatherPathModels(): List<Job> {
-        return gatherPathResponseModels() + gatherPathRequestBodyModels() + calculateOperationParameters()
+        return gatherResponseModels() + gatherRequestModels() + calculateOperationParameters()
     }
 
     private suspend fun OpenApi3.calculateOperationParameters() = withContext(coroutineContext) {
@@ -129,7 +162,7 @@ open class OpenApiAnalyzer(
     internal suspend fun calculateParameters(pathID: TypeStore.PathId, operation: Operation) {
         val params = operation.parameters.map { param ->
             param.schema.makeType(
-                param.name.safePropName()/*param.jsonReference.split("/").last().safePropName()*/,
+                param.name.safePropName(),
                 param.jsonReference,
                 false,
                 operation.isParameterAReference(param.name),
@@ -168,7 +201,7 @@ open class OpenApiAnalyzer(
         } else emptyList()
     }
 
-    internal suspend fun OpenApi3.gatherPathResponseModels() = withContext(coroutineContext) {
+    internal suspend fun OpenApi3.gatherResponseModels() = withContext(coroutineContext) {
         return@withContext mapPaths { pathId, operation ->
             processPath(pathId, operation)
         }.flatten()
@@ -205,13 +238,20 @@ open class OpenApiAnalyzer(
         }
     }
 
-    private suspend fun OpenApi3.gatherPathRequestBodyModels() = withContext(coroutineContext) {
+    private suspend fun OpenApi3.gatherRequestModels() = withContext(coroutineContext) {
         return@withContext paths.flatMap { (pathString, path) ->
             path.operations.filter { it.value.requestBody.contentMediaTypes.isNotEmpty()  }.map { (verb, operation) ->
-                val schema = operation.requestBody.contentMediaTypes.values.first().schema
+                val firstMediaType = operation.requestBody.contentMediaTypes.entries.first()
+                val schema = firstMediaType.value.schema
                 val modelName = makeRequestBodyModelName(verb, pathString)
                 launch {
-                    schema.makeType(modelName, schema.jsonReference, referenceData = null, wrapMode = WrapMode.None)
+                    val type = schema.makeType(modelName, schema.jsonReference, referenceData = null, wrapMode = WrapMode.None)
+                    val pathID = TypeStore.PathId(pathString, verb)
+                    typeStore.registerRequestBody(
+                        pathID,
+                        type,
+                        firstMediaType.key
+                    )
                 }
             }
         }
@@ -228,7 +268,7 @@ open class OpenApiAnalyzer(
                     components = components,
                     wrapMode = WrapMode.None
                 )
-                name to PropInfo(type, DocTemplate.Builder().add(schema.description).add(schema.example?.let { "\nExample: $it" }).build())
+                name to PropInfo(type, DocTemplate.Builder().add(schema.description.sanitizeForKdoc()).add(schema.example?.let { "\nExample: $it" }).build())
             }
         }
     }
@@ -347,7 +387,7 @@ open class OpenApiAnalyzer(
                                 nameForObject.capitalize()
                             ).copy(nullable = canBeNull),
                             elements = enums.filterNotNull().associateWith { it.toString().safeEnumEntryName() },
-                            description = DocTemplate.of(description))
+                            description = DocTemplate.of(description.sanitizeForKdoc()))
                             .register()
                     } else {
                         if (format == "date") {
@@ -426,7 +466,7 @@ open class OpenApiAnalyzer(
                             props = allProps,
                             requiredProps = allRequired,
                             defaultValues = defaultValues,
-                            description = DocTemplate.of(description)
+                            description = DocTemplate.of(description.sanitizeForKdoc())
                         ).register()
                     } else if (hasAnyOfSchemas()) {
                         // TODO: Generate an object with superset of fields but all fields optional?
@@ -477,7 +517,7 @@ open class OpenApiAnalyzer(
                 requiredProps = this.requiredFields,
                 defaultValues = properties.mapValues { it.value.default },
                 description = DocTemplate.Builder()
-                    .add(description)
+                    .add(description.sanitizeForKdoc())
                     .newLine()
                     .addMany(props.entries) { idx, (name, info) ->
                         if (info.doc != null) {

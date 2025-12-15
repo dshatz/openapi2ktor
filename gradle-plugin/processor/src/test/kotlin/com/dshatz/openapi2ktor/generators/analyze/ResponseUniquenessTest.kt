@@ -59,7 +59,7 @@ class ResponseUniquenessTest {
                     }
                 }
             }
-            api.gatherPathResponseModels().joinAll()
+            api.gatherResponseModels().joinAll()
         }
 
     }

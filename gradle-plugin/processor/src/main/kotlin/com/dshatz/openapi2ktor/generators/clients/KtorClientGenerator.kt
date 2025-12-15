@@ -5,16 +5,44 @@ import com.dshatz.openapi2ktor.generators.Type
 import com.dshatz.openapi2ktor.generators.TypeStore
 import com.dshatz.openapi2ktor.generators.TypeStore.OperationParam.ParamLocation
 import com.dshatz.openapi2ktor.kdoc.DocTemplate
-import com.dshatz.openapi2ktor.utils.*
+import com.dshatz.openapi2ktor.utils.Packages
+import com.dshatz.openapi2ktor.utils.TreeNode
+import com.dshatz.openapi2ktor.utils.buildPathTree
+import com.dshatz.openapi2ktor.utils.capitalize
+import com.dshatz.openapi2ktor.utils.cleanJsonReference
+import com.dshatz.openapi2ktor.utils.getAllPaths
+import com.dshatz.openapi2ktor.utils.isSuccessCode
+import com.dshatz.openapi2ktor.utils.makeRequestFunName
+import com.dshatz.openapi2ktor.utils.matches
+import com.dshatz.openapi2ktor.utils.removeLeadingSlash
+import com.dshatz.openapi2ktor.utils.safePropName
+import com.dshatz.openapi2ktor.utils.sanitizeForKdoc
 import com.reprezen.jsonoverlay.Overlay
 import com.reprezen.kaizen.oasparser.model3.OpenApi3
 import com.reprezen.kaizen.oasparser.model3.Path
 import com.reprezen.kaizen.oasparser.model3.Response
-import com.squareup.kotlinpoet.*
+import com.squareup.kotlinpoet.AnnotationSpec
+import com.squareup.kotlinpoet.ClassName
+import com.squareup.kotlinpoet.CodeBlock
+import com.squareup.kotlinpoet.FileSpec
+import com.squareup.kotlinpoet.FunSpec
+import com.squareup.kotlinpoet.KModifier
+import com.squareup.kotlinpoet.LambdaTypeName
+import com.squareup.kotlinpoet.MUTABLE_MAP
+import com.squareup.kotlinpoet.MemberName
+import com.squareup.kotlinpoet.ParameterSpec
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
-import io.ktor.client.*
-import io.ktor.client.engine.*
-import io.ktor.client.plugins.*
+import com.squareup.kotlinpoet.PropertySpec
+import com.squareup.kotlinpoet.STAR
+import com.squareup.kotlinpoet.TypeName
+import com.squareup.kotlinpoet.TypeSpec
+import com.squareup.kotlinpoet.UNIT
+import com.squareup.kotlinpoet.asTypeName
+import io.ktor.client.HttpClient
+import io.ktor.client.HttpClientConfig
+import io.ktor.client.engine.HttpClientEngine
+import io.ktor.client.engine.HttpClientEngineFactory
+import io.ktor.client.plugins.ClientRequestException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import net.pwall.mustache.Template
@@ -102,15 +130,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
         }
         val enum = TypeSpec.enumBuilder(ClassName(packages.client, "Servers"))
             .primaryConstructor(FunSpec.constructorBuilder().addParameter("url", String::class).build())
-            .apply {
-                enumNames.forEach { (server, name) ->
-                    addEnumConstant(name,
-                        TypeSpec.anonymousClassBuilder()
-                            .addSuperclassConstructorParameter("%S", server.url)
-                            .build()
-                    )
-                }
-            }
+            .addServerEnumConstants(enumNames)
             .addProperty(PropertySpec.builder("url", String::class).initializer("url").build())
             .build()
         return FileSpec.builder(ClassName(packages.client, "Servers")).addType(enum).build()
@@ -124,7 +144,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
         val params = listOf(
             ParameterSpec.builder("engine", HttpClientEngine::class).build(),
             ParameterSpec.builder("baseUrl", String::class.asTypeName())
-                .run { if (api.hasServers()) defaultValue("%S", api.servers.first().url) else this }
+                .run { if (api.hasServers()) defaultValue("%S", api.servers.first().url.ensureTrailingSlash()) else this }
                 .build(),
             ParameterSpec.builder("json", Json::class.asTypeName()).defaultValue("Json { ignoreUnknownKeys = true }").build(),
             ParameterSpec.builder("config", configLambdaType).defaultValue(CodeBlock.of("{}")).build()
@@ -229,6 +249,15 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                 val iResponseClass = typeStore.getResponseSuccessInterface(pathID)
                 val iErrorClass = typeStore.getResponseErrorInterface(pathID)
 
+                val requestBodyInfo = typeStore.getRequestBody(pathID)
+                val requestBodyParamName = "body"
+                val requestBodyParam = requestBodyInfo?.let {
+                    ParameterSpec.builder(
+                        requestBodyParamName,
+                        it.type.makeTypeName(),
+                    ).build()
+                }
+
                 val successResponseClass = if (iResponseClass != null)
                     iResponseClass
                 else {
@@ -254,7 +283,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                         .build()
                 }
 
-                val description = operation.description
+                val description = operation?.description?.sanitizeForKdoc()
                 val funName = pathID.makeRequestFunName(dropPrefix = prefix)
 
                 val exceptionTypeName = funName.capitalize() + "Exception"
@@ -265,6 +294,9 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                 val requestFun = FunSpec.builder(funName)
                     .returns(libResultClass.parameterizedBy(successResponseClass, errorResponseClass))
                     .addModifiers(KModifier.SUSPEND)
+                    .apply {
+                        requestBodyParam?.let(::addParameter)
+                    }
                     .addParameters(paramSpecs.values)
                     .apply {
                         description?.let { addKdoc(DocTemplate.Builder().add(it).build().toCodeBlock(::findConcreteType)) }
@@ -293,6 +325,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                                             add(".%M(%S, %N, %L)", addPathParamHelper, param.name, spec.name, spec.type.isNullable)
                                         }
                                 }.build()))
+                            // Inside http.<method>(...) {} block
                             .apply {
                                 // Add query params
                                 paramSpecs.filter { it.key.where == ParamLocation.QUERY || it.key.where == ParamLocation.HEADER }.forEach { (paramInfo, paramSpec) ->
@@ -310,7 +343,10 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                                     securitySchemes[it]?.generateApplicator(it)?.apply(::add)
                                 }
                             }
-                            .endControlFlow() // request config
+                            .setRequestBody(requestBodyParam)
+                            .setContentType(requestBodyInfo)
+                            // end of http.<method> block
+                            .endControlFlow()
                             .beginControlFlow("val result = when (response.status.value)") // begin when
                             .apply {
                                 // Success status code mapping
@@ -361,7 +397,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
     private fun buildResponseException(exceptionTypeName: String, errorResponseClass: TypeName): TypeSpec {
         return TypeSpec.classBuilder(exceptionTypeName)
             .addModifiers(KModifier.DATA)
-            .superclass(Exception::class)
+            .superclass(ClassName("kotlin", "Exception"))
             .addProperties(listOf(
                 PropertySpec.builder("body", errorResponseClass)
                     .initializer("body")

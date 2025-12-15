@@ -1,15 +1,14 @@
 package com.dshatz.openapi2ktor.plugin
 
-import com.dshatz.openapi2ktor.Cli
-import com.dshatz.openapi2ktor.GeneratorConfig
 import com.dshatz.openapi2ktor.AdditionalPropsConfig
+import com.dshatz.openapi2ktor.Cli
 import com.dshatz.openapi2ktor.DateLibrary
+import com.dshatz.openapi2ktor.GeneratorConfig
 import com.dshatz.openapi2ktor.utils.capitalize
 import org.gradle.api.Action
 import org.gradle.api.DefaultTask
 import org.gradle.api.Named
 import org.gradle.api.NamedDomainObjectContainer
-import org.gradle.api.NamedDomainObjectList
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.file.Directory
@@ -22,6 +21,9 @@ import org.gradle.api.tasks.*
 import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompileCommon
+import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
+import org.jetbrains.kotlin.gradle.tasks.KotlinNativeCompile
 import javax.inject.Inject
 
 class Plugin : Plugin<Project> {
@@ -44,7 +46,15 @@ class Plugin : Plugin<Project> {
                     if (kotlinExtension != null) {
                         project.afterEvaluate {
                             kotlinExtension.sourceSets.getByName("commonMain").kotlin.srcDir(generatorExtension.outputDir.dir("src/main/kotlin"))
-                            kotlinExtension.sourceSets.getByName("commonTest").kotlin.srcDir(generatorExtension.outputDir.dir("src/main/kotlin"))
+                        }
+                        project.tasks.withType(KotlinCompileCommon::class.java).configureEach {
+                            it.dependsOn(task.get())
+                        }
+                        project.tasks.withType(KotlinNativeCompile::class.java).configureEach {
+                            it.dependsOn(task.get())
+                        }
+                        project.tasks.withType(KotlinJvmCompile::class.java).configureEach {
+                            it.dependsOn(task.get())
                         }
                     }
                 }

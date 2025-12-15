@@ -44,3 +44,5 @@ fun Response?.getResponseComponentRefInfo(): ReferenceMetadata? {
 data class ReferenceMetadata(val target: String)
 val ReferenceMetadata?.isReference get() = this != null
 fun String?.reference(): ReferenceMetadata? = this?.let { ReferenceMetadata(it) }
+
+fun String?.sanitizeForKdoc(): String? = this?.replace("*/", "*\\/")

@@ -24,6 +24,7 @@ rootProject.name = "openapi2ktor"
 include(":e2e:polymorphism")
 include(":e2e:binance")
 include(":e2e:github")
+include(":e2e:tvdb")
 
 includeBuild("gradle-plugin")
 
