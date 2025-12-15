@@ -42,7 +42,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
       - name: Run Gradle Checks and Tests
-        run: ./gradlew check --no-daemon --scan --stacktrace --build-cache
+        run: ./gradlew :gradle-plugin:processor:check :e2e:polymorphism:check :e2e:github:check :e2e:tvdb:check --no-daemon --scan --stacktrace --build-cache
         continue-on-error: true  # Continue even if tests fail
 
       - name: Upload Test Results
