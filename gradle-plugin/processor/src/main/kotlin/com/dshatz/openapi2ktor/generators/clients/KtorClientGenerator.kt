@@ -92,8 +92,13 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
 
     private fun generateServersEnum(schema: OpenApi3): FileSpec {
         val enumNames = schema.servers.associateWith {
-            it.url.substringAfter("//").substringBefore("/")
+            it.url.substringAfter("//") // after scheme
+                .substringBefore("/") // before first slash = domain name with port
+                .substringBefore(":") // domain name without port
                 .split(".", "-").joinToString("_") { it.uppercase() }
+                .let { name ->
+                    if (name.first().isDigit()) "IP_$name" else name
+                }
         }
         val enum = TypeSpec.enumBuilder(ClassName(packages.client, "Servers"))
             .primaryConstructor(FunSpec.constructorBuilder().addParameter("url", String::class).build())
