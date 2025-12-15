@@ -1,6 +1,7 @@
 package com.dshatz.openapi2ktor.generators.models
 
 import com.dshatz.openapi2ktor.GeneratorConfig
+import com.dshatz.openapi2ktor.generators.ReservedKeywords
 import com.dshatz.openapi2ktor.generators.Type
 import com.dshatz.openapi2ktor.generators.TypeStore
 import com.dshatz.openapi2ktor.utils.*
@@ -131,7 +132,7 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
         val typeToSuperInterfaces = interfaceMappingForOneOf(typeStore)
             .mapKeys { it.key.makeTypeName() }
         return typeStore.getTypes().values.filterIsInstance<Type.WithTypeName.Object>().map { type ->
-            val className = type.typeName as ClassName
+            val className = with (ReservedKeywords) { type.escapeKeywords().makeTypeName() as ClassName }
             val fileSpec = FileSpec.builder(className)
 
             val interfacesForOneOf = typeToSuperInterfaces[type.typeName]
@@ -382,9 +383,11 @@ class KotlinxCodeGenerator(override val typeStore: TypeStore, private val packag
 
         val prop = PropertySpec.builder(name, finalType)
             .apply {
+                // Add kdoc
                 if (propInfo.doc != null) {
                     addKdoc(propInfo.doc.toCodeBlock(::findConcreteType))
                 }
+                // Add serializable annotation. From a non-null type.
                 val simpleTypeOrNull = (actualType as? Type.SimpleType)?.kotlinType?.copy(nullable = false)
                 if (simpleTypeOrNull != null && isDate(simpleTypeOrNull)) {
                     addAnnotation(AnnotationSpec.builder(Serializable::class.asClassName()).addMember(CodeBlock.of("%T::class", dateSerializers[simpleTypeOrNull]!!)).build())

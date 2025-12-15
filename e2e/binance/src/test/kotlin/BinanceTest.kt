@@ -1,7 +1,6 @@
 import binance.client.HttpResult
 import binance.client.api.v3.V3Client
 import binance.models.paths.api.v3.avgPrice.get.response.GetApiV3AvgPriceResponse400
-import binance.models.paths.api.v3.klines.get.parameters.i1.`1`
 import binance.models.paths.api.v3.klines.get.parameters.i1.Interval
 import io.ktor.client.engine.cio.*
 import io.ktor.client.engine.mock.*
