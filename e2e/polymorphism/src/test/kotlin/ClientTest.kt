@@ -5,7 +5,6 @@ import com.denisbrandi.netmock.engine.NetMockEngine
 import kotlinx.coroutines.test.runTest
 import sample.client.Client
 import sample.models.components.parameters.UserType
-import sample.models.components.parameters.UserTypeParam
 import sample.models.components.schemas.AdminUser.AdminUser
 import sample.models.paths.users.get.response.GetUsersResponse200
 import kotlin.test.Test

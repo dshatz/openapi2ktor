@@ -48,6 +48,19 @@ components:
       enum:
         - value1
         - value2
+    Companion:
+      properties:
+        intId:
+          type: integer
+        description:
+          type: string
+
+    CompanionList:
+      properties:
+        companions:
+          type: array
+          items:
+            "$ref": '#/components/schemas/Companion'
     User:
       nullable: true
       description: Normal user

@@ -1,5 +1,6 @@
 package com.dshatz.openapi2ktor.generators
 
+import com.dshatz.openapi2ktor.generators.Type.Companion.simpleType
 import com.dshatz.openapi2ktor.utils.*
 import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
@@ -98,12 +99,14 @@ class TypeStore {
         }
     }
 
-    fun <T: Type> T.makeTypeName(): TypeName {
-        return when (this) {
-            is Type.WithTypeName -> typeName as ClassName
-            is Type.Reference -> resolveReference(jsonReference).makeTypeName()
-            is Type.List -> List::class.asTypeName().parameterizedBy(itemsType.makeTypeName())
-            is Type.SimpleType -> this.kotlinType
+    fun <T: Type> T.makeTypeName(): TypeName = with (ReservedKeywords) {
+        escapeKeywords().run {
+            return when (this) {
+                is Type.WithTypeName -> typeName as ClassName
+                is Type.Reference -> resolveReference(jsonReference).makeTypeName()
+                is Type.List -> List::class.asTypeName().parameterizedBy(itemsType.makeTypeName())
+                is Type.SimpleType -> this.kotlinType
+            }
         }
     }
 
@@ -220,4 +223,13 @@ class TypeStore {
         return sb.toString()
     }
 
+}
+
+object ReservedKeywords {
+    private val reservedKeywords = setOf("Companion")
+    fun Type.escapeKeywords(): Type {
+        return if (this is Type.WithTypeName && this.simpleName() in reservedKeywords) {
+            this.withTypeName(this.typeName.updateSimpleName { it + "_" })
+        } else this
+    }
 }
