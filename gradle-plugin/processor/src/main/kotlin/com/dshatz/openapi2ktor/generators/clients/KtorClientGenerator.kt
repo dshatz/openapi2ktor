@@ -39,6 +39,10 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
     private lateinit var securitySchemes: Map<String, SecurityScheme>
     private var globalSecurityRequirements: List<String> = emptyList()
 
+    private val ignoreUnknownJson = Json {
+        ignoreUnknownKeys = true
+    }
+
     override fun generate(schema: OpenApi3): List<FileSpec> {
         processSecurity(schema)
         val serversEnum = generateServersEnum(schema)
@@ -60,20 +64,6 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
         val pathTree = buildPathTree(schema.paths)
         val clientSpecs = mutableListOf<FileSpec>()
         pathTree.generateClients("", clientSpecs)
-        /*val clients = pathTree.children.map { node ->
-            val path = node.path.substringAfter('/')
-            val prefix = if (path.toIntOrNull() != null) {
-                // probably a version path (e.g. /3/...)
-                "v$path"
-            } else path
-
-            val allPaths = node.getAllPaths()
-            generateClientForPackagePrefix(schema, prefix, allPaths)
-        }*/
-        /*val clients = schema.paths.entries.groupBy { it.key.drop(1).substringBefore("/") }
-            .mapValues { (firstSegment, paths) ->
-                generateClientForPackagePrefix(schema, firstSegment, paths.associate { it.key to it.value})
-            }*/
         return clientSpecs + serversEnum
     }
 
@@ -88,9 +78,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
 
     private fun processSecurity(schema: OpenApi3) {
         if (schema.securitySchemes.isNotEmpty()) {
-            securitySchemes = Json {
-                ignoreUnknownKeys = true
-            }.decodeFromString<Map<String, SecurityScheme>>(Overlay.of(schema.securitySchemes).toJson().toString())
+            securitySchemes = ignoreUnknownJson.decodeFromString<Map<String, SecurityScheme>>(Overlay.of(schema.securitySchemes).toJson().toString())
                 .mapValues { (_, scheme) ->
                     if (scheme is ApiKey && scheme.bearerFormat == "bearer") {
                         // Some strange syntax for defining bearer.
@@ -225,9 +213,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
         val funcSpecs: List<EndpointTools> = paths.flatMap { (pathString, path) ->
             path.operations.map { (verb, operation) ->
                 val pathLevelSecurity = operation.securityRequirements.flatMap { it.requirements.keys }
-                val security = if (pathLevelSecurity.isEmpty())
-                    globalSecurityRequirements
-                else pathLevelSecurity
+                val security = pathLevelSecurity.ifEmpty { globalSecurityRequirements }
                 val statusToResponseType = operation.responses.mapValues { (statusCode, response) ->
                     val resposneRef = Overlay.of(response).jsonReference
                     val responseModel = typeStore.getResponseMapping(TypeStore.PathId(pathString, verb))[statusCode.toInt()]?.type
