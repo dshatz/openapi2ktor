@@ -1,4 +1,5 @@
 import binance.client.HttpResult
+import binance.client.Servers
 import binance.client.api.v3.V3Client
 import binance.models.paths.api.v3.avgPrice.get.response.GetApiV3AvgPriceResponse400
 import binance.models.paths.api.v3.klines.get.parameters.i1.Interval
@@ -24,7 +25,7 @@ class BinanceTest {
     }
 
 
-    private val binance = V3Client(CIO) {
+    private val binance = V3Client(CIO, baseUrl = "https://api-gcp.binance.com/") {
         install(Logging) {
             level = LogLevel.ALL
             logger = Logger.SIMPLE
