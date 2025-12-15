@@ -130,15 +130,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
         }
         val enum = TypeSpec.enumBuilder(ClassName(packages.client, "Servers"))
             .primaryConstructor(FunSpec.constructorBuilder().addParameter("url", String::class).build())
-            .apply {
-                enumNames.forEach { (server, name) ->
-                    addEnumConstant(name,
-                        TypeSpec.anonymousClassBuilder()
-                            .addSuperclassConstructorParameter("%S", server.url)
-                            .build()
-                    )
-                }
-            }
+            .addServerEnumConstants(enumNames)
             .addProperty(PropertySpec.builder("url", String::class).initializer("url").build())
             .build()
         return FileSpec.builder(ClassName(packages.client, "Servers")).addType(enum).build()
@@ -152,7 +144,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
         val params = listOf(
             ParameterSpec.builder("engine", HttpClientEngine::class).build(),
             ParameterSpec.builder("baseUrl", String::class.asTypeName())
-                .run { if (api.hasServers()) defaultValue("%S", api.servers.first().url) else this }
+                .run { if (api.hasServers()) defaultValue("%S", api.servers.first().url.ensureTrailingSlash()) else this }
                 .build(),
             ParameterSpec.builder("json", Json::class.asTypeName()).defaultValue("Json { ignoreUnknownKeys = true }").build(),
             ParameterSpec.builder("config", configLambdaType).defaultValue(CodeBlock.of("{}")).build()

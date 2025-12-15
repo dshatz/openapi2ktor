@@ -292,7 +292,7 @@ open class OpenApiAnalyzer(
         referenceData: ReferenceMetadata?,
         wrapMode: WrapMode
     ): Type {
-        println("Entering ${"component".takeIf { components } ?: ""} ${jsonReference.cleanJsonReference()}")
+//        println("Entering ${"component".takeIf { components } ?: ""} ${jsonReference.cleanJsonReference()}")
 
         val packageName = makePackageName(jsonReference, packages.models)
 
