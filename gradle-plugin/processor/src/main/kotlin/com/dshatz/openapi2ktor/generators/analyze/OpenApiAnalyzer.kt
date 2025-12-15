@@ -13,6 +13,7 @@ import com.dshatz.openapi2ktor.generators.models.KotlinxCodeGenerator
 import com.dshatz.openapi2ktor.kdoc.DocTemplate
 import com.dshatz.openapi2ktor.utils.*
 import com.reprezen.jsonoverlay.Overlay
+import com.reprezen.kaizen.oasparser.model3.MediaType
 import com.reprezen.kaizen.oasparser.model3.OpenApi3
 import com.reprezen.kaizen.oasparser.model3.Operation
 import com.reprezen.kaizen.oasparser.model3.Response
@@ -115,7 +116,7 @@ open class OpenApiAnalyzer(
     }
 
     private suspend fun OpenApi3.gatherPathModels(): List<Job> {
-        return gatherPathResponseModels() + gatherPathRequestBodyModels() + calculateOperationParameters()
+        return gatherResponseModels() + gatherRequestModels() + calculateOperationParameters()
     }
 
     private suspend fun OpenApi3.calculateOperationParameters() = withContext(coroutineContext) {
@@ -129,7 +130,7 @@ open class OpenApiAnalyzer(
     internal suspend fun calculateParameters(pathID: TypeStore.PathId, operation: Operation) {
         val params = operation.parameters.map { param ->
             param.schema.makeType(
-                param.name.safePropName()/*param.jsonReference.split("/").last().safePropName()*/,
+                param.name.safePropName(),
                 param.jsonReference,
                 false,
                 operation.isParameterAReference(param.name),
@@ -168,7 +169,7 @@ open class OpenApiAnalyzer(
         } else emptyList()
     }
 
-    internal suspend fun OpenApi3.gatherPathResponseModels() = withContext(coroutineContext) {
+    internal suspend fun OpenApi3.gatherResponseModels() = withContext(coroutineContext) {
         return@withContext mapPaths { pathId, operation ->
             processPath(pathId, operation)
         }.flatten()
@@ -205,13 +206,20 @@ open class OpenApiAnalyzer(
         }
     }
 
-    private suspend fun OpenApi3.gatherPathRequestBodyModels() = withContext(coroutineContext) {
+    private suspend fun OpenApi3.gatherRequestModels() = withContext(coroutineContext) {
         return@withContext paths.flatMap { (pathString, path) ->
             path.operations.filter { it.value.requestBody.contentMediaTypes.isNotEmpty()  }.map { (verb, operation) ->
-                val schema = operation.requestBody.contentMediaTypes.values.first().schema
+                val firstMediaType = operation.requestBody.contentMediaTypes.entries.first()
+                val schema = firstMediaType.value.schema
                 val modelName = makeRequestBodyModelName(verb, pathString)
                 launch {
-                    schema.makeType(modelName, schema.jsonReference, referenceData = null, wrapMode = WrapMode.None)
+                    val type = schema.makeType(modelName, schema.jsonReference, referenceData = null, wrapMode = WrapMode.None)
+                    val pathID = TypeStore.PathId(pathString, verb)
+                    typeStore.registerRequestBody(
+                        pathID,
+                        type,
+                        firstMediaType.key
+                    )
                 }
             }
         }
@@ -252,7 +260,7 @@ open class OpenApiAnalyzer(
         referenceData: ReferenceMetadata?,
         wrapMode: WrapMode
     ): Type {
-//        println("Entering ${"component".takeIf { components } ?: ""} ${jsonReference.cleanJsonReference()}")
+        println("Entering ${"component".takeIf { components } ?: ""} ${jsonReference.cleanJsonReference()}")
 
         val packageName = makePackageName(jsonReference, packages.models)
 

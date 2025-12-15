@@ -3,10 +3,12 @@ import com.denisbrandi.netmock.NetMockRequest
 import com.denisbrandi.netmock.NetMockResponseBuilder
 import com.denisbrandi.netmock.engine.NetMockEngine
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
 import sample.client.Client
 import sample.models.components.parameters.UserType
 import sample.models.components.schemas.AdminUser.AdminUser
 import sample.models.paths.users.get.response.GetUsersResponse200
+import sample.models.paths.users.post.requestBody.PostUsersRequest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -59,6 +61,20 @@ class ClientTest {
             assertEquals("my_secret_key", mandatoryHeaders["X-MBX-APIKEY"])
         }
         runCatching { client.getOrders(UserType.ADMIN) } // Will fail because it's mocked.
+    }
+
+    @Test
+    fun `post request body`() = runTest {
+        val request = PostUsersRequest()
+        interceptRequest(
+            "/users"
+        ) {
+            assertEquals(
+                Json.encodeToString(request),
+                this.body
+            )
+        }
+        runCatching { client.postUsers(request) } // Response is not mocked, we only check request here.
     }
 
     private fun mockGet(relPath: String, response: String, status: Int = 200) {

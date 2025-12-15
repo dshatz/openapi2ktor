@@ -229,6 +229,15 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                 val iResponseClass = typeStore.getResponseSuccessInterface(pathID)
                 val iErrorClass = typeStore.getResponseErrorInterface(pathID)
 
+                val requestBodyInfo = typeStore.getRequestBody(pathID)
+                val requestBodyParamName = "body"
+                val requestBodyParam = requestBodyInfo?.let {
+                    ParameterSpec.builder(
+                        requestBodyParamName,
+                        it.type.makeTypeName(),
+                    ).build()
+                }
+
                 val successResponseClass = if (iResponseClass != null)
                     iResponseClass
                 else {
@@ -265,6 +274,9 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                 val requestFun = FunSpec.builder(funName)
                     .returns(libResultClass.parameterizedBy(successResponseClass, errorResponseClass))
                     .addModifiers(KModifier.SUSPEND)
+                    .apply {
+                        requestBodyParam?.let(::addParameter)
+                    }
                     .addParameters(paramSpecs.values)
                     .apply {
                         description?.let { addKdoc(DocTemplate.Builder().add(it).build().toCodeBlock(::findConcreteType)) }
@@ -293,6 +305,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                                             add(".%M(%S, %N, %L)", addPathParamHelper, param.name, spec.name, spec.type.isNullable)
                                         }
                                 }.build()))
+                            // Inside http.<method>(...) {} block
                             .apply {
                                 // Add query params
                                 paramSpecs.filter { it.key.where == ParamLocation.QUERY || it.key.where == ParamLocation.HEADER }.forEach { (paramInfo, paramSpec) ->
@@ -310,7 +323,10 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                                     securitySchemes[it]?.generateApplicator(it)?.apply(::add)
                                 }
                             }
-                            .endControlFlow() // request config
+                            .setRequestBody(requestBodyParam)
+                            .setContentType(requestBodyInfo)
+                            // end of http.<method> block
+                            .endControlFlow()
                             .beginControlFlow("val result = when (response.status.value)") // begin when
                             .apply {
                                 // Success status code mapping
