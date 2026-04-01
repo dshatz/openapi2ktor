@@ -18,7 +18,7 @@ fun makeResponseModelName(pathId: TypeStore.PathId, statusCode: Int, includeStat
 }
 
 fun makeRequestBodyModelName(verb: String, path: String): String {
-    return makeCamelCase(verb, path.safeName(), "Request")
+    return makeCamelCase(verb, path.makeResponseModelName(), "Request")
 }
 
 
