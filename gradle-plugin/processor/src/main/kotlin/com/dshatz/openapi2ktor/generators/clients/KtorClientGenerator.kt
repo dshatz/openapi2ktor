@@ -378,7 +378,7 @@ class KtorClientGenerator(override val typeStore: TypeStore, val packages: Packa
                                     }
                                 }
                                 if (statusToResponseType.isEmpty()) {
-                                    addStatement("else -> response.%M<%T>()", ktorBodyMethod, errorResponseClass)
+                                    addStatement("else -> e.response.%M<%T>()", ktorBodyMethod, errorResponseClass)
                                 } else {
                                     addStatement("else -> throw e")
                                 }

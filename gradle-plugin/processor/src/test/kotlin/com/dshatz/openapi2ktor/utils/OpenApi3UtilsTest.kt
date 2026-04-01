@@ -36,4 +36,15 @@ class OpenApi3UtilsTest: BaseTestClass() {
         val nonRefResponse = api.responses["error_response"]
         assertFalse(nonRefResponse!!.getResponseComponentRefInfo().isReference)
     }
+
+    @Test
+    fun `get request reference`() {
+        val operation = api.paths["/friends/search"]!!.post
+        val ref1 = operation.getReferenceForRequest()
+        assertNotNull(ref1)
+
+        val op2 = api.paths["/users"]!!.get
+        val ref2 = op2.getReferenceForRequest()
+        assertNull(ref2)
+    }
 }
