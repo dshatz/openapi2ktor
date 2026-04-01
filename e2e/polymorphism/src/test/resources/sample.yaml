@@ -195,6 +195,20 @@ components:
 
 
 paths:
+  /pets/search:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/UserOrAdmin"
+  /friends/search:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/UserOrAdmin"
   /orders:
     get:
       security:

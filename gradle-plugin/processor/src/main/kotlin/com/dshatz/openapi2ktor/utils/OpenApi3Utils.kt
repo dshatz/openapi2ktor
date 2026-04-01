@@ -32,8 +32,16 @@ fun Operation.isResponseAReference(statusCode: Int): ReferenceMetadata? {
     return getReferenceForResponse(statusCode) ?: responses[statusCode.toString()].getResponseComponentRefInfo()
 }
 
+fun Operation.isRequestAReference(): ReferenceMetadata? {
+    return getReferenceForRequest()
+}
+
 fun Operation.getReferenceForResponse(statusCode: Int): ReferenceMetadata? {
     return Overlay.of(responses).getReference(statusCode.toString())?.refString.reference()
+}
+
+fun Operation.getReferenceForRequest(): ReferenceMetadata? {
+    return Overlay.of(requestBody.contentMediaTypes.values.firstOrNull()).getReference("schema")?.refString.reference()
 }
 
 fun Response?.getResponseComponentRefInfo(): ReferenceMetadata? {

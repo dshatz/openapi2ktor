@@ -23,6 +23,7 @@ import com.dshatz.openapi2ktor.utils.isComponentSchemaRoot
 import com.dshatz.openapi2ktor.utils.isParameterAReference
 import com.dshatz.openapi2ktor.utils.isPartOfComponentSchema
 import com.dshatz.openapi2ktor.utils.isReference
+import com.dshatz.openapi2ktor.utils.isRequestAReference
 import com.dshatz.openapi2ktor.utils.isResponseAReference
 import com.dshatz.openapi2ktor.utils.isSuccessCode
 import com.dshatz.openapi2ktor.utils.jsonReference
@@ -37,9 +38,9 @@ import com.dshatz.openapi2ktor.utils.safeEnumEntryName
 import com.dshatz.openapi2ktor.utils.safePropName
 import com.dshatz.openapi2ktor.utils.sanitizeForKdoc
 import com.reprezen.jsonoverlay.Overlay
-import com.reprezen.kaizen.oasparser.model3.MediaType
 import com.reprezen.kaizen.oasparser.model3.OpenApi3
 import com.reprezen.kaizen.oasparser.model3.Operation
+import com.reprezen.kaizen.oasparser.model3.Path
 import com.reprezen.kaizen.oasparser.model3.Response
 import com.reprezen.kaizen.oasparser.model3.Schema
 import com.squareup.kotlinpoet.ClassName
@@ -238,14 +239,16 @@ open class OpenApiAnalyzer(
         }
     }
 
-    private suspend fun OpenApi3.gatherRequestModels() = withContext(coroutineContext) {
-        return@withContext paths.flatMap { (pathString, path) ->
+    internal suspend fun processRequestBodies(paths: Map<String, Path>): List<Job> = withContext(coroutineContext) {
+        paths.flatMap { (pathString, path) ->
             path.operations.filter { it.value.requestBody.contentMediaTypes.isNotEmpty()  }.map { (verb, operation) ->
                 val firstMediaType = operation.requestBody.contentMediaTypes.entries.first()
                 val schema = firstMediaType.value.schema
                 val modelName = makeRequestBodyModelName(verb, pathString)
                 launch {
-                    val type = schema.makeType(modelName, schema.jsonReference, referenceData = null, wrapMode = WrapMode.None)
+                    val refData = operation.isRequestAReference()
+                    val type = schema.makeType(modelName, schema.jsonReference, referenceData = refData, wrapMode = WrapMode.None)
+                    println("Processing $pathString, request: $type. Nullable: ${schema.isNullable}")
                     val pathID = TypeStore.PathId(pathString, verb)
                     typeStore.registerRequestBody(
                         pathID,
@@ -255,6 +258,10 @@ open class OpenApiAnalyzer(
                 }
             }
         }
+    }
+
+    private suspend fun OpenApi3.gatherRequestModels(): List<Job> = withContext(coroutineContext) {
+        return@withContext processRequestBodies(paths)
     }
 
 

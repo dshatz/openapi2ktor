@@ -417,6 +417,22 @@ class AnalyzerTest: BaseTestClass() {
         }
     }
 
+    @Test
+    fun `request body as reference`() = runTest {
+        val pathId = PathId("/pets/search", "post")
+        val op = pathId.getOperation()
+        processComponent("User")
+        processComponent("AdminUser")
+        processComponent("UserOrAdmin")
+        analyzer.processRequestBodies(api.paths)
+        analyzer.processPath(pathId, op)
+        val requestBody = typeStore.getRequestBody(pathId)
+        val target = typeStore.findConcreteType(requestBody!!.type)
+        assertIs<Type.WithTypeName.OneOf>(target)
+        assertEquals("UserOrAdmin", (target.typeName as ClassName).simpleName)
+        assertEquals(2, target.childrenMapping.size)
+    }
+
 
     private fun PathId.getOperation(): Operation {
         return api.paths[pathString]!!.getOperation(verb)
